@@ -1,0 +1,78 @@
+DBIx/DataModel version 0.10
+======================
+
+DBIx::DataModel - Classes and UML-style Associations on top of DBI
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+DEPENDENCIES
+
+Carp
+DBI
+Sql::Abstract
+
+DESCRIPTION
+
+This is yet, yet, yet another wrapper framework to build Perl classes
+and objects around database tables and records. There are many other
+CPAN modules in this area; perhaps the mere fact that they are so
+numerous demonstrates that there is more than one way to do it, and
+none is obviously the best, so why not propose another one ?
+The L<SEE ALSO> section at the end of this documentation gives 
+some pointers.
+
+C<DBIx::DataModel> is written compactly as one single module,
+and only depends on L<DBI> and L<SQL::Abstract>.
+It is intended to help client applications in performing
+common tasks such as data conversion and associations between tables,
+while retaining an open access both to the base DBI layer and to the
+basic Perl datastructures, whenever lower-level operations are needed.
+The focus is on building trees of data which can then be passed to
+external helper modules for generating XML, Perl dumps,
+javascript JSON, templates of the Template Toolkit, etc. Such modules
+need to walk on the data tree, so they cannot work if everything is
+implemented as OO methods to be called on demand (because there is no
+simple way to ask for all available methods, and even if you get
+there, it is not possible to distinguish which of those methods
+encapsulate relevant data). Therefore C<DBIx::DataModel> does not
+insist on OO information hiding; on the contrary, direct access
+to the object hash is encouraged for inspecting the data. In the
+same spirit, transaction handling is left to the client code.
+
+C<DBIx::DataModel> defines an API for accessing the database from Perl,
+but will not create the database itself. So use your best
+database administration tools to define your schemas, tables, keys, 
+relationships and integrity rules;  then tell the bare minimum 
+to C<DBIx::DataModel> so that Perl programs can work with the data.
+To do so, you first declare your tables with their primary 
+keys. Then you declare UML I<binary associations>, which will give
+you a couple of methods to walk through the data,
+possibly with some additional WHERE filters. From your associations, 
+you can also generate some C<Views> to directly query 
+a list of tables, with the appropriate joins between them.
+At each method call, it is possible
+to specify which subset of columns should be retrieved 
+(or to rely on the default, namely '*').
+
+Columns may have some associated I<handlers> for performing data transformation
+of validation. You may also define I<column types> in your schema so that
+every column of a given type inherits the same collection of handlers
+(think for example of a 'date' type or a 'phoneNumber' type).
+
+DISCLAIMER: this code is still in beta, the API may slightly
+change in future versions.
+	
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2005 Laurent Dami
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself. 
+
