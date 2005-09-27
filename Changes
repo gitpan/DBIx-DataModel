@@ -1,6 +1,19 @@
 Revision history for Perl extension DBIx::DataModel.
 
-16.09.2005 First CPAN release, v0.10
+v0.12
+  - Added the named arguments API to select()
+  - new methods preselectWhere() and selectFromRoles()
+  - new internal functions _parseSelectArgs() and _addSelectCriteria
+  - rewrote implentation of Association role methods using these new functions
+  - new method SqlDialect	
+  
+v0.11 internal release
+  - Updated the doc, explaining about writing role methods by hand
+  - Added a check in fetch() that we are in a Table class
+  - Changed implementation of ViewFromRoles, using INNER JOIN
+
+
+v0.10 16.09.2005 First CPAN release, 
 
 
 

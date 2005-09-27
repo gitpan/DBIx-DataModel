@@ -7,7 +7,7 @@ use Carp;
 use DBI;
 use SQL::Abstract;
 
-our $VERSION = '0.10';
+our $VERSION = '0.12';
 
 =head1 NAME
 
@@ -52,7 +52,7 @@ Declare "column types" with some handlers ..
      toDB     => sub {$_[0] /= 100 if $_[0]},
      validate => sub {$_[0] =~ /1?\d?\d/});
 
-.. and apply these "column types" so some of our columns
+.. and apply these "column types" to some of our columns
 
   Employee->ColumnType(Date    => qw/d_birth/);
   Activity->ColumnType(Date    => qw/d_begin d_end/);
@@ -92,8 +92,8 @@ Search employees whose name starts with 'D'
 
 idem, but we just want a subset of the columns
 
-  my $empl_F = Employee->select([qw/firstname lastname emp_id/],
-                                {lastname => {-like => 'F%'}});
+  my $empl_F = Employee->select(-columns => [qw/firstname lastname emp_id/],
+                                -where   => {lastname => {-like => 'F%'}});
 
 Get a list of employee names in age order
 
@@ -109,13 +109,17 @@ has been automatically converted to display format.
       $emp->{firstname}, $emp->lastname, $emp->d_birth;
   }
 
-
 Follow the joins through role methods
 
   foreach my $act (@{$emp->activities}) {
     printf "working for %s from $act->{d_begin} to $act->{d_end}", 
       $act->department->name;
   }
+
+Role methods can take arguments too, like C<select()>
+
+  my @recentAct  = $dpt->activities({d_begin => {'>=' => '2005-01-01'}});
+  my @recentEmpl = map {$_->employee([qw/firstname lastname/])} @recentAct;
 
 Export the data : external helper modules usually expect
 a full data tree (instead of calling methods dynamically), so 
@@ -135,6 +139,8 @@ in one single SQL statement (instead of iterating through role methods).
                              {d_begin => {'>=' => '2000-01-01'}});
 
 =head1 DESCRIPTION
+
+=head2 Introduction
 
 This is yet, yet, yet another wrapper framework to build Perl classes
 and objects around database tables and records. There are many other
@@ -162,20 +168,19 @@ insist on OO information hiding; on the contrary, direct access
 to the object hash is encouraged for inspecting the data. In the
 same spirit, transaction handling is left to the client code.
 
-C<DBIx::DataModel> defines an API for accessing the database from Perl,
-but will not create the database itself. So use your best
-database administration tools to define your schemas, tables, keys, 
-relationships and integrity rules;  then tell the bare minimum 
-to C<DBIx::DataModel> so that Perl programs can work with the data.
-To do so, you first declare your tables with their primary 
-keys. Then you declare UML I<binary associations>, which will give
-you a couple of methods to walk through the data,
-possibly with some additional WHERE filters. From your associations, 
-you can also generate some C<Views> to directly query 
-a list of tables, with the appropriate joins between them.
-At each method call, it is possible
-to specify which subset of columns should be retrieved 
-(or to rely on the default, namely '*').
+C<DBIx::DataModel> defines an API for accessing the database from
+Perl, but will not create the database itself. So use your best
+database administration tools to define your schemas, tables, keys,
+relationships and integrity rules; then tell the bare minimum to
+C<DBIx::DataModel> so that Perl programs can work with the data.  To
+do so, you first declare your tables with their primary keys. Then you
+declare UML I<binary associations>, which will create the 
+I<role methods> to walk through the data in both directions, possibly 
+with some additional WHERE filters. From your associations, you can also
+generate some C<Views> to directly query a list of tables, with the
+appropriate joins between them.  At each method call, it is possible
+to specify which subset of columns should be retrieved (or to rely on
+the default, namely '*').
 
 Columns may have some associated I<handlers> for performing data transformation
 of validation. You may also define I<column types> in your schema so that
@@ -185,10 +190,60 @@ every column of a given type inherits the same collection of handlers
 DISCLAIMER: this code is still in beta, the API may slightly
 change in future versions.
 
+=head2 Quickstart
+
+The reference documentation below is quite long, but many details
+are for advanced usage. For simple tasks you might just want
+to follow the synopsis :
+
+=over
+
+=item 1
+
+declare your tables through the L<Table> method
+
+=item 2
+
+declare your UML binary associations through the L<Association> method
+
+=item 3
+
+call the L<select> method on one of your main tables
+
+=item 4 
+
+call the role methods to get some data from associated tables 
+
+=item 5
+
+report or update
+
+=back
+
 =cut
 
 
 my %classData; # {className => {classProperty => value, ...}}
+
+my $sqlDialects = {
+ Default => {
+   innerJoin         => "%s INNER JOIN %s ON %s",
+   leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
+   joinAssociativity => "left",
+ },
+ MsAccess => {
+   innerJoin         => "%s INNER JOIN (%s) ON %s",
+   leftJoin          => "%s LEFT OUTER JOIN (%s) ON %s",
+   joinAssociativity => "right",
+ },
+ BasisODBC => {
+   innerJoin         => undef, 
+   leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
+   joinAssociativity => "left",
+ },
+};
+
+
 
 =head1 METHODS
 
@@ -204,7 +259,6 @@ run-time methods, either for classes or for instances.
 
 
 =head2 Compile-time methods
-
 
 =head3 Framework methods 
 
@@ -238,10 +292,65 @@ sub Schema {
   };
 
   _createPackage($pckName => [__PACKAGE__]);
+  $pckName->SqlDialect('Default');
+
   return $dbh;
 }
 
 =head3 Schema methods
+
+=head4 SqlDialect
+
+  MySchema->SqlDialect($builtinDialect);
+  MySchema->SqlDialect(innerJoin         => "%s INNER JOIN (%s) ON %s",
+                       leftJoin          => ...,
+                       joinAssociativity => "left" | "right");
+
+SQL has no standard syntax for performing joins, so if your
+database wants a particular syntax you will need to declare it.
+Current builtin dialects are either C<MsAccess>, C<BasisODBC> or C<Default>
+(contributions to enrich this list are welcome).
+Otherwise you supply the following information :
+
+=over
+
+=item innerJoin
+
+a string in L<perlfunc/sprintf> format, with placeholders
+for the left table, the right table and the join criteria.
+Default is C<%s INNER JOIN %s ON %s>.
+If your database does not support inner joins, set this to C<undef>
+and the generated SQL will be in the form C<T1, T2, ... Tn WHERE ... AND ... >.
+
+=item leftJoin
+
+a string for left outer joins.
+Default is C<%s LEFT OUTER JOIN %s ON %s>.
+
+=item joinAssociativity
+
+either C<left> or C<right>
+
+=back
+
+
+=cut
+
+sub SqlDialect {
+  my $self = shift;
+  $self->isSchema or croak "SqlDialect must be called on a Schema class";
+
+  my $args = (@_ == 1) ?
+    $sqlDialects->{$_[0]} || croak "invalid SQL dialect: $_[0]" :
+    {@_};
+
+  while (my ($k, $v) = each %$args) {
+    $k =~ /^(innerJoin|leftJoin|joinAssociativity)$/
+      or croak "invalid argument to SqlDialect: $k";
+    $self->classData->{sqlDialect}{$k} = $v;
+  }
+}
+
 
 =head4 Table
 
@@ -358,7 +467,8 @@ sub View {
   @parentTables = ($schema) unless @parentTables;
 
   _createPackage($pckName => \@parentTables);
-  _defineMethod ($pckName => applyColumnHandlers => \&_viewApplyColumnHandlers);
+  _defineMethod($pckName => applyColumnHandlers => \&_viewApplyColumnHandlers);
+  return $pckName;
 }
 
 
@@ -435,7 +545,7 @@ sub Association {
 
   @cols1 == @cols2 or croak "Association: numbers of columns do not match";
   
-  # build an accessor method for each side of the association
+  # for each side of the association ...
   for ([$table1, $role1, $arity1, \@cols1, $table2, $arity2, \@cols2],
        [$table2, $role2, $arity2, \@cols2, $table1, $arity1, \@cols1])
   {
@@ -448,21 +558,12 @@ sub Association {
 
     # build method as a closure 
     my $meth = sub {
-      my ($self, @selectArgs) = @_; # $self will be  of class $foreign_t 
+      my $self = shift; 
       ref($self) or croak "role $r cannot be called as class method";
 
       my %joinCols = ();
       @joinCols{@$c} = @{$self}{@$foreign_c};
-      my $assoc = $t->select(@selectArgs, \%joinCols);
-
-      if ($a =~ /^([01]\.\.)?1$/) { # if maximum arity 1 
-	@$assoc <= 1 or 
-	  carp "too many results for ${foreign_t}::$r of arity $a";
-	return $assoc->[0];	    # return a single object
-      }
-      else {                        # if maximum arity n
-	return $assoc;              # return an array ref 
-      }
+      $t->preselectWhere(\%joinCols, $a)->(@_);
     };
 
     # install method
@@ -470,10 +571,7 @@ sub Association {
 
     # record join parameters in schema->classData
     my %where;
-    foreach (0..$#$c) {
-      $where{$foreign_t->table . "." . $foreign_c->[$_]} = 
-	$t->table . "." . $c->[$_];
-    }
+    @where{@$foreign_c} = @$c;
     $schema->classData->{joins}{$foreign_t}{$r} = {
       arity => $a,
       table => $t,
@@ -496,22 +594,24 @@ automatically inferred from the associations. So for example
 
 is equivalent to 
 
-  MySchema->View(DepartmentActivitiesEmployee => '*' =>
-                  'Department, Employee 
-                       LEFT OUTER JOIN Activity
-                       ON Department.dpt_id = Activity.dpt_id
-                      WHERE
-                        Activity.emp_id = Employee.emp_id',
+  my $sql = <<_EOSQL_
+  Department 
+    LEFT OUTER JOIN Activity ON Department.dpt_id = Activity.dpt_id
+    LEFT OUTER JOIN Employee ON Activity.emp_id   = Employee.emp_id
+  _EOSQL_
+  
+  MySchema->View(DepartmentActivitiesEmployee => '*' => $sql => 
                  qw/Department Activity Employee/);
 
 For each pair of tables, the kind of join is chosen according to
 the arity declared with the role : if the minimum arity is 0, 
 the join will be LEFT OUTER JOIN; otherwise it will be a usual inner join.
-Left outer joins are arranged to be a the end of the SELECT statement.
+(exception : after a first left join, all remaining tables are also
+ connected through additional left joins).
 
 The view name will be composed by concatenating the table and 
-the capitalized role names. Such names might be long and uncomfortable 
-to use, so the view name is also returned as result of the method
+the capitalized role names. Since such names might be long and uncomfortable 
+to use, the view name is also returned as result of the method
 call, so that the client code can store it in a variable and use
 it as an alias.
 
@@ -547,52 +647,69 @@ but will require a more sophisticated API (tree structure).
 
 =cut
 
+
+
+
 sub ViewFromRoles {
   my ($self, $table, @roles) = @_;
-  
-  my @innerJoins;
-  my @outerJoins;
-  my @parentTables = ($table);
+
+  $self->isSchema or croak "ViewFromRoles must be called on a Schema class";
 
   my $viewName = join "", $table, map(ucfirst, @roles);  
   return $viewName if defined (%{$viewName.'::'}); # view was already generated
 
-  my $tName = $table->table;
+  # 1) go through the roles and accumulate information 
 
+  my @parentTables = ($table);
+  my @innerJoins;
+  my @leftJoins;
+  my $joinInto = \@innerJoins; # initially; might change later to \@leftJoins
   my $curTable = $table;
+  my ($dbTableLeft, $dbTableRight) = (undef, $table->table);
+
   foreach my $role (@roles) {
     my $joinData = $self->schema->classData->{joins}{$curTable}{$role} or
-      croak "ViewFromRoles: role $role not found";
-    
-    my $which = ($joinData->{arity} =~ m/^(0|\*)/) ? \@outerJoins : \@innerJoins;
-    push @$which, $joinData;
+      croak "ViewFromRoles: role $role not found in $curTable";
+
+    $joinInto = \@leftJoins if $joinData->{arity} =~ m/^(0|\*)/;
 
     $curTable = $joinData->{table};
+    ($dbTableLeft, $dbTableRight) = ($dbTableRight, $curTable->table);
+
+    my $where = $joinData->{where};
+    my @criteria = map {"$dbTableLeft.$_=$dbTableRight.$where->{$_}"} 
+                       keys %$where;
+    push @$joinInto, [$curTable->table => join(" AND ", @criteria)];
     push @parentTables, $curTable;
   }
 
-  my $tables = join(", ", $tName, map {$_->{table}->table} @innerJoins);
-  foreach my $oj (@outerJoins) {
-    my $on = join " AND ", map {"$_=$oj->{where}{$_}"} keys %{$oj->{where}};
-    $tables .= " LEFT OUTER JOIN " . $oj->{table}->table . " ON $on";
-  }
+  # 2) build SQL, following the joins (first inner joins, then left joins)
 
-  # Here we play tricks with SQL::Abstract : we build a hashref where
-  # all info is in the keys, and values are just refs to an empty string.
-  # This is because we want ("t1.col=t2.col", []) and not
-  # ("t1.col=?", ['t2.col']).
-  my %where;
-  my $noValue = \"";
-  foreach my $ij (@innerJoins) {
-    my $k = join " AND ", map {"$_=$ij->{where}{$_}"} keys %{$ij->{where}};
-    $where{$k} = $noValue;
+  my $sqlDialect = $self->classData->{sqlDialect};
+  my $where = {};
+  my $sql = "";
+
+  if (not @innerJoins) {
+    $sql = $table->table;
+  } elsif ($sqlDialect->{innerJoin}) {
+    $sql = _sqlJoins($table->table, 
+		     \@innerJoins, 
+		     $sqlDialect->{innerJoin},
+		     $sqlDialect->{joinAssociativity});
+  } else {
+    $sql = join ", ", $table->table, map {$_->[0]} @innerJoins;
+    $where = join " AND ", map {$_->[1]} @innerJoins;
   }
   
-  $self->View($viewName => '*' => $tables => \%where => @parentTables);
-  return $viewName;
+  $sql = _sqlJoins($sql,
+		   \@leftJoins, 
+		   $sqlDialect->{leftJoin},
+		   $sqlDialect->{joinAssociativity}) if @leftJoins;
+
+  # 3) install the View
+
+  $self->View($viewName => '*' => $sql => $where => @parentTables);
 }
-
-
 
 
 =head3 Hybrid methods (for Schema or Table classes)
@@ -959,11 +1076,15 @@ sub blessFromDB {
 
 =head4 select
 
+  MyTable->select(-columns => \@columns, 
+                  -where   => \%where, 
+                  -orderBy => \@order)
   MyTable->select(\@columns, \%where, \@order)
   MyView ->select(\@columns, \%where, \@order)
 
 Applies a SQL SELECT to the associated table (or view), and returns a ref to 
 the array of resulting records, blessed into objects of the current class.
+Arguments are all optional and may be passed either by name or by position.
 The API is borrowed from L<SQL::Abstract> :
 
 =over
@@ -978,39 +1099,41 @@ is usually '*'.
 
 =item *
 
-the second argument C<< \%where >> is a reference to a hash of 
-criteria that will be translated into SQL clauses ; 
+the second argument C<< \%where >> is a reference to a hash or array of 
+criteria that will be translated into SQL clauses. In most cases, this
+will just be something like C<< {col1 => 'val1, col2 => 'val2} >>;
 see L<SQL::Abstract::select> for a detailed description of the
-structure of that hash. The argument can also be
-a plain string like C<< "column1 IN (3, 5, 7, 11) OR column2 IS NOT NULL" >>;
-but in that case you must supply something for the
-first argument C<< \@columns >>, otherwise C<select> will get confused.
+structure of that hash or array. It can also be
+a plain SQL string like C<< "col1 IN (3, 5, 7, 11) OR col2 IS NOT NULL" >>.
 
 =item *
 
 the third argument C<< \@order >> is a reference to a list 
-of columns for sorting.
+of columns for sorting. Again it can also be a plain SQL string
+like C<< "col1 DESC, col3, col2 DESC" >>.
 
 =back
 
-No verification is done on C<< \@columns >>,
+No verification is done on the list of retrieved C<< \@columns >>,
 so it is OK if the list does not contain primary or foreign keys --- but then
 later attempts to perform joins or updates will obviously fail.
 
-Returns C<< undef >> if an error occurs; in that case the error can be 
-retrieved from C<< DBI::err >> or C<< DBI::errstr >>. See also 
-L<< DBI::PrintError >> and L<< DBI::RaiseError >> for more options about 
-error handling.
-
+In addition to these "official" arguments, the method may also take
+a 4th argument C<<-moreWhere>> (hashref), used internally by role methods for
+passing join criteria. In that case, entries of the "moreWhere" hash are 
+combined with the entries of the regular "where" hash before building
+the SQL statement. You only need to understand about this if you intend
+to write additional role methods; an example is shown in section
+L<Self-referential associations> below.
 
 =cut
 
 sub select {
-  my $sth = &selectSth  # efficiency hack : like selectSth(@_); see perlsub
-    or return undef;
-
   my ($self) = @_;
   my $class = ref $self || $self;
+
+  my $sth = &selectSth  # implicitly passing @_
+    or return undef;
 
   # fetch data records and bless them into objects
   my $records = $sth->fetchall_arrayref({});
@@ -1023,67 +1146,77 @@ sub select {
 
 =head4 selectSth
 
-  Table->selectSth(\@columns, \%where, \@order)
+  MyTable->selectSth(\@columns, \%where, \@order)
 
-This exactly like the C<< select() >> method, except that 
-it returns an executed DBI statement handle instead of an arrayref
-of objects. Returns undef in case of error.
+This exactly like the C<< select() >> method, except that it returns
+an executed DBI statement handle instead of an arrayref of
+objects. Use this method whenever you want to iterate yourself through
+the results :
 
-Use this method whenever you want to iterate yourself through the results :
-
-  my $sth = MyTable->selectSth( ... ) or die DBI::errstr;
+  my $sth = MyTable->selectSth( ... );
   while (my $row = $sth->fetchrow_hashref) {
-    my $obj = MyTable->blessFromDB($row);
-    workWith($obj);
+    MyTable->blessFromDB($row);
+    workWith($row);
   }
 
 =cut
 
 
 sub selectSth {
-  my ($self, @args) = @_;
+  my $self = shift;
   my $class = ref $self || $self;
   my $classData = $class->classData;
 
-  # 1) Do some magic with the argument list.
-
-  #    In addition to the official arguments, we also handle a
-  #    4th argument "moreWhere", used internally by role methods for
-  #    passing join criteria. In that case we combine them with the 
-  #    regular "where" argument.
-
-  # if the first arg is a hashref, we guess that the 'columns' argument
-  # was omitted, so we  take the default columns from the class (usually '*')
-  unshift @args, $classData->{columns}  if ref($args[0]) eq 'HASH';
-
-  # if the third arg is a hashref, we guess this is the "moreWhere"
-  # argument and we insert an empty 'orderBy'
-  splice(@args, 2, 0, undef) if ref($args[2]) eq 'HASH';
-
-  # if we are in a View, the "moreWhere" comes from the class data
-  $args[3] = $classData->{where} if $classData->{classKind} eq 'View';
-
-  my ($columns, $where, $orderBy, $moreWhere) = @args;
-
-  # combine $where and $moreWhere criteria
-  $where ||= {};
-  @{$where}{keys %$moreWhere} = values %$moreWhere;
-
-  # 2) build SQL query and get data
+  my $args = &_parseSelectArgs;	# implicitly passing @_
+  _addSelectCriteria($args, $classData->{where}) if $classData->{where};
+  $args->{-columns} ||= $classData->{columns}; # (default, usually '*')
 
   my $sqlA = $self->schema->classData->{sqlAbstr};
-  my ($sql, @bind) = $sqlA->select($self->table, $columns, $where, $orderBy);
+  my ($sql, @bind) = $sqlA->select($self->table, 
+				   $args->{-columns}, 
+				   $args->{-where}, 
+				   $args->{-orderBy});
   $class->_debug($sql);
   my $sth;
   $sth = $self->dbh->prepare($sql) and $sth->execute(@bind) and return $sth;
   return undef; # in case of error
 }
 
+=head4 preselectWhere
+
+  my $meth = MyTable->preselectWhere({col1 => $val1, ...})
+
+
+Returns a reference to a function that will select data from
+C<MyTable>, just like the C<select()> method, but where some
+additional selection criteria are "preselected". The preselection
+criteria are specified in L<SQL::Abstract> format. This method is
+mainly for internal use; you only want to learn about it if you
+intend to write your own role methods.
+
+=cut
+
+sub preselectWhere {
+  my ($class, $where, $arity) = @_;
+  return sub {
+    my $selectArgs = &_parseSelectArgs;
+    _addSelectCriteria($selectArgs, $where);
+    my $result = $class->select(%$selectArgs);
+    if ($arity and $arity =~ /^([01]\.\.)?1$/) { # if maximum arity 1 
+      @$result <= 1 or 
+	carp "too many results for arity $arity in class $class";
+      return $result->[0];	   # return a single object
+    }
+    else {                         # if maximum arity n
+      return $result;              # return an array ref 
+    }
+  }
+}
 
 
 =head4 fetch
 
-  Table->fetch(@keyValues) 
+  MyTable->fetch(@keyValues) 
 
 Searches the single record whose primary key is C<< @keyValues >>.
 Returns undef if none is found or if an error is encountered
@@ -1093,6 +1226,8 @@ Returns undef if none is found or if an error is encountered
 
 sub fetch {
   my $self = shift;
+  $self->classData->{classKind} eq 'Table' or 
+      croak "fetch : not a Table class";
   my %primKeys;
   @primKeys{$self->primKey} = @_;
   my $lst = $self->select(\%primKeys) or return undef;
@@ -1102,11 +1237,11 @@ sub fetch {
 
 =head4 insert
 
-  Table->insert({col1 => $val1, col2 => $val2, ...}, {...})
+  MyTable->insert({col1 => $val1, col2 => $val2, ...}, {...})
 
 Inserts new records into the database, after having applied 
-the 'toDB' handlers.  Beware, this operation may modify the 
-argument data (manipulating values through 'toDB' handlers, 
+the 'toDB' handlers.  This operation 
+I<may modify the argument data> (manipulating values through 'toDB' handlers, 
 or deleting columns declared as 'noUpdate').
 See also section L<Transactions and error handling> below.
 
@@ -1319,12 +1454,17 @@ sub hasInvalidColumns {
 
 =head4 expand
 
-  $record->expand($role [, @args] )
+  $obj->expand($role [, @args] )
 
 Executes the method C<< $role >> to follow an Association, and 
-stores the result in the object itself under C<< $self->{$role} >>.
+stores the result in the object itself under C<< $obj->{$role} >>.
 This is typically used to expand an object into a tree datastructure.
-Optional C<< @args >> are passed to C<< $self->$role(@args) >>.
+Optional C<< @args >> are passed to C<< $obj->$role(@args) >>.
+
+After the expansion, beware of the difference between
+C<< $obj->{$role} >> (the stored result) and
+C<< $obj->$role >> (calling the role again through a new SQL query).
+
 
 =cut
 
@@ -1339,7 +1479,8 @@ sub expand {
   $record->autoExpand( [$recurse] )
 
 Asks the object to expand itself with some objects in foreign tables.
-By default does nothing, should be redefined in subclasses.
+By default does nothing, should be redefined in subclasses,
+most probably through the L<AutoExpand> method (with capital 'A').
 If the optional argument C<$recurse> is true, then 
 C<autoExpand> is recursively called on the expanded objects.
 
@@ -1349,6 +1490,50 @@ C<autoExpand> is recursively called on the expanded objects.
 sub autoExpand {}
 
 
+
+=head4 selectFromRoles
+
+  my $lst = $obj->selectFromRoles(qw/role1 role2 .../)
+                ->(-columns => [...], -where => {...}, -orderBy=>[...]);
+
+Starting from a given object, returns a reference to a function that
+selects a collection of data rows from associated tables, performing
+the appropriate joins.  Internally this is implemented throught the
+L<ViewFromRoles> method, with an additional join criteria to constrain
+on the primary key(s) of C<$obj>.  The returned function takes the
+same arguments as the L<select> method. So for example if 
+C<< $emp->emp_id == 987 >>, then
+
+  $emp->selectFromRoles(qw/activities department/)->({d_end => undef})
+
+will generate
+
+  SELECT * FROM Activity INNER JOIN Department 
+                         ON Activity.dpt_id = Department.dpt_id
+           WHERE  emp_id = 987 AND d_end IS NULL
+
+=cut
+
+sub selectFromRoles {
+  my ($self, $firstRole, @otherRoles) = @_;
+  my $class = ref($self) or 
+    croak "selectFromRoles called as class method ($self)";
+  my $schema = $self->schema;
+  my $joinData = $schema->classData->{joins}{$class}{$firstRole} or
+    croak "no role $firstRole in class $class";
+  my $firstTable = $joinData->{table};
+  @otherRoles or croak "selectFromRoles : not enough arguments";
+
+  my $view = $self->schema->ViewFromRoles($firstTable, @otherRoles);
+
+  my %criteria;
+  while (my ($leftCol, $rightCol) = each %{$joinData->{where}}) {
+    $criteria{$rightCol} = $self->{$leftCol};
+  }
+  $view->preselectWhere(\%criteria);
+}
+
+
 =head4 automatic column read accessors through AUTOLOAD
 
 Columns have implicit read accessors through AUTOLOAD. 
@@ -1356,7 +1541,7 @@ So instead of C<< $record->{column} >> you can write
 C<< $record->column >>. 
 
 I know this is a bit slower than generating all accessors
-in advance (through L<Class::Accessor> or something similar),
+(through L<Class::Accessor> or something similar),
 but the advantage is that you don't need to know all column
 names in advance. This is how we support variable column lists
 (two instances of the same Table do not necessarily hold
@@ -1365,6 +1550,20 @@ doing the SELECT).
 
 
 =cut
+
+
+sub AUTOLOAD {
+   my $self = shift;
+   our $AUTOLOAD;
+   $AUTOLOAD =~ s/^.*:://;
+   return if $AUTOLOAD eq 'DESTROY'; 
+
+   ref($self) and exists $self->{$AUTOLOAD} and return $self->{$AUTOLOAD};
+
+   croak "no method $AUTOLOAD";	# otherwise
+}
+
+
 
 
 
@@ -1455,17 +1654,57 @@ sub _modifyData { # called by methods 'update' and 'delete'
 }
 
 
-sub AUTOLOAD {
-   my $self = shift;
-   our $AUTOLOAD;
-   $AUTOLOAD =~ s/^.*:://;
-   return if $AUTOLOAD eq 'DESTROY'; 
 
-   ref($self) and exists $self->{$AUTOLOAD} and return $self->{$AUTOLOAD};
+sub _parseSelectArgs { # named or positional args to the select() method
+  my %args;
 
-   croak "no method $AUTOLOAD";	# otherwise
+  if ($_[0] and not ref($_[0]) and $_[0] =~ /^-/) { # called with named args
+    %args = @_;
+  }
+  else { # we were called with unnamed args (all optional!), so we try
+         # to guess which is which from their datatypes.
+    $args{-columns}   = shift unless ref($_[0]) eq 'HASH';
+    $args{-where}     = shift unless ref($_[0]) eq 'ARRAY';
+    $args{-orderBy}   = shift unless ref($_[0]) eq 'HASH';
+    croak "too many args to select()" if @_;
+  }
+  return \%args;
 }
 
+
+sub _addSelectCriteria { # prepare appropriate structure for SQL::Abstract
+  my ($args, @moreWhere) = @_;
+  my %where;
+  foreach my $crit ($args->{-where}, @moreWhere) {
+    if    (ref($crit) eq 'HASH')  {@where{keys %$crit} = values %$crit}
+    elsif (ref($crit) eq 'ARRAY') {$where{-nest} = $where{-nest} ? 
+	[-and => [-nest => $where{-nest}, -nest => $crit]] : $crit;   }
+    elsif ($crit)                 {$where{$crit} = \"";	              }
+  }
+  $args->{-where} = \%where;
+}
+
+
+sub _sqlJoins { # connect a sequence of joins according to SQL dialect
+  my ($leftmost, $joins, $joinSyntax, $associativity) = @_;
+
+  my $sql;
+
+  if ($associativity eq "right") {
+    my $joinOn;
+    ($sql, $joinOn) = @{pop @$joins};
+    foreach my $operand (reverse(@$joins), [$leftmost, undef]) {
+      $sql = sprintf $joinSyntax, $operand->[0], $sql, $joinOn;
+      $joinOn = $operand->[1];
+    }
+  } else {			# left associativity
+    $sql = $leftmost;
+    foreach my $operand (@$joins) {
+      $sql = sprintf $joinSyntax, $sql, $operand->[0], $operand->[1];
+    }
+  }
+  return $sql;
+}
 
 
 =head1 OTHER CONSIDERATIONS
@@ -1582,7 +1821,7 @@ we might get into problems : consider
   MySchema->Association([qw/Person mother   1 pers_id/],
                         [qw/Person children * mother_id/]);
   MySchema->Association([qw/Person father   1 pers_id/],
-                        [qw/Person children * father_id/]);
+                        [qw/Person children * father_id/]); # BUG
 
 This does not work because there are two definitions  of the "children"
 role name in the same class "Person".
@@ -1612,6 +1851,28 @@ associations :
                         [qw/Person none    * mother_id/]);
   MySchema->Association([qw/Person father  1 pers_id/],
                         [qw/Person none    * father_id/]);
+
+
+And there is a more sophisticated way to define the "children" method,
+that will accept additional "where" criteria, like every regular method.
+
+  package Person;
+  sub children {
+    my $self = shift;
+    my $id = $self->{pers_id};
+    Person->preselectWhere([mother_id => $id, father_id => $id])->(@_);
+  }
+
+This definition takes advantage of the hidden "moreWhere" argument
+of the L<select> method to force the join on C<mother_id> or 
+C<father_id>, while leaving open the possibility for the caller
+to specify additional criteria. For example, all female children 
+of a person (either father or mother) can now be retrieved through
+
+  $person->children({gender => 'F'})
+
+Observe the use of the C<-nest> operator from L<SQL::Abstract>
+to insert an arrayref (that will generate an SQL 'OR'). 
 
 =head1 SEE ALSO
 

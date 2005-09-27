@@ -3,9 +3,9 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use Test::More tests => 53;
+use Test::More tests => 57;
 
-sub die_ok(&) { my $code=shift; eval {&$code()}; ok($@, $@);}
+sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
 
 
@@ -20,7 +20,6 @@ die_ok {MySchema->Schema('SubSchema')};
 
 
 # will not override an existing package
-die_ok {DBIx::DataModel->Schema('MySchema');};
 die_ok {DBIx::DataModel->Schema('DBI');};
 
   BEGIN {
@@ -117,7 +116,7 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '')};
-  skip "DBD::Mock does not seem to be installed", 35 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", 39 if $@ or not $dbh;
 
 
   sub sqlLike { # closure on $dbh
@@ -213,12 +212,25 @@ SKIP: {
   $view->select("lastname, dpt_name", {gender => 'F'});
 
   sqlLike('SELECT lastname, dpt_name ' .
-	  'FROM t_employee, t_department LEFT OUTER JOIN t_activity ' .
-	  'ON t_employee.emp_id=t_activity.emp_id ' .
-	  'WHERE ( T_Activity.dpt_id=T_Department.dpt_id AND '.
-          'gender = ? )', ['F'], 'association');
+	  'FROM t_employee LEFT OUTER JOIN t_activity ' .
+	  'ON t_employee.emp_id=t_activity.emp_id ' .		
+	  'LEFT OUTER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles');
 
 
+  die_ok {$emp->selectFromRoles(qw/activities/)};
+  die_ok {$emp->selectFromRoles(qw/activities foo/)};
+  die_ok {$emp->selectFromRoles(qw/foo bar/)};
+
+  $emp->selectFromRoles(qw/activities department/)->({gender => 'F'});
+
+  sqlLike('SELECT * ' .
+	  'FROM t_activity ' .
+	  'INNER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
+	  'selectFromRoles ');
 
 
   Employee->update(999, {firstname => 'toto', 
