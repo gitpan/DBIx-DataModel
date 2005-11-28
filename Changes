@@ -1,5 +1,18 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.14 internal release
+  - added clause "-for (readonly | update)" to select() and
+    added method "selectImplicitlyFor"
+  - doTransaction starts with $dbh->begin_work
+  - role methods reuse cached results from "expand"
+  - added method Autoload(1|0)
+
+
+v0.13 internal release
+  - Added doTransaction
+  - Added Schema->lasth;
+
+
 v0.12
   - Added the named arguments API to select()
   - new methods preselectWhere() and selectFromRoles()

@@ -7,7 +7,7 @@ use Carp;
 use DBI;
 use SQL::Abstract;
 
-our $VERSION = '0.12';
+our $VERSION = '0.14';
 
 =head1 NAME
 
@@ -495,13 +495,25 @@ C<< $role2 >> for accessing the associated object(s) in C<< $table2 >>;
 that method normally returns an arrayref, unless C<< $arity2 >>
 has maximum '1' (in that case the return value is a single object
 ref).  Of course, C<< $table2 >> conversely gets a method named 
-C<< $role1 >>.
+C<< $role1 >>. 
 
-Such role methods perform joins within Perl (as opposed to joins
+To understand why tables and roles are crossed, look a the UML picture :
+
+  +--------+                     +--------+
+  |        | *              0..1 |        |
+  | Table1 +---------------------+ Table2 |
+  |        | role1         role2 |        |
+  +--------+                     +--------+
+
+so from an object of C<Table1>, you need a method C<role2> to access
+the associated object of C<Table2>.
+
+
+Role methods perform joins within Perl (as opposed to joins
 directly performed within the database). That is, given a declaration
 
   MySchema->Association([qw/Activity   activities 0..* emp_id/],
-                        [qw/Employee   employee   1 emp_id/]);
+                        [qw/Employee   employee   1    emp_id/]);
 
 we can call
 
@@ -515,13 +527,19 @@ The role method can also accept additional parameters
 in L<SQL::Abstract> format (see also the L<select> method
 in this module). So for example
 
-  my @acts = $anEmployee->activities([qw/act_name salary/], {isActive => 'Y'});
+  my @acts = $anEmployee->activities(-columns => [qw/act_name salary/], 
+                                     -where   => {isActive => 'Y'});
 
 would perform the following SQL request :
 
   SELECT act_name, salary FROM Activity WHERE 
     emp_id = $anEmployee->{emp_id} AND
     isActive = 'Y'
+
+If the role method is called without any parameters, and
+if that role was previously expanded (see L</expand> method), 
+i.e. if the object hash contains an entry C<< $obj->{$role} >>, 
+then this data is reused instead of calling the database again.
 
 To specify a unidirectional association, just supply 
 0 or an empty string (or even the string C<"0"> or C<'""'> or C<"none">)
@@ -530,7 +548,7 @@ method is not generated.
 
 The C<Association> method only supports binary associations; however,
 you can create a C<View> from a series of associations, in order
-to simultaneously join many tables : see method L<ViewFromRoles>.
+to simultaneously join many tables : see method L</ViewFromRoles>.
 
 =cut
 
@@ -561,13 +579,19 @@ sub Association {
       my $self = shift; 
       ref($self) or croak "role $r cannot be called as class method";
 
+      # if called without args, and that role was previously expanded,
+      # then return the cached version
+      if ($self->{$r} and not @_) {
+	return $self->{$r};
+      }
+
       my %joinCols = ();
       @joinCols{@$c} = @{$self}{@$foreign_c};
       $t->preselectWhere(\%joinCols, $a)->(@_);
     };
 
     # install method
-    _defineMethod($foreign_t => $r => $meth);
+    _defineMethod($foreign_t, $r, $meth);
 
     # record join parameters in schema->classData
     my %where;
@@ -722,7 +746,7 @@ sub ViewFromRoles {
 
 When applied to a schema class, this method declares a
 column type of name C<typeName>, to which a number of I<handlers> are
-associated (see methods L<ColumnHandlers> and L<applyColumnHandlers>).
+associated (see methods L</ColumnHandlers> and L</applyColumnHandlers>).
 
 When applied to a table class, the handlers associated to 
 C<< typeName >> are registered for each of the columns
@@ -804,6 +828,52 @@ sub AutoUpdateColumns {
   my $self = shift; 
   $self->classData->{autoUpdateColumns} = \@_;
 }
+
+
+=head4 Autoload
+
+  MySchema->Autoload(1); # turn on AUTOLOAD 
+  MyClass ->Autoload(1); # idem, just for one class
+  MySchema->Autoload(0); # turn it off
+
+If AUTOLOAD is turned on (default is off), 
+then columns have implicit read accessors through AUTOLOAD. 
+So instead of C<< $record->{column} >> you can write
+C<< $record->column >>. 
+
+I know this is a bit slower than generating all accessors explicitly 
+(through L<Class::Accessor> or something similar),
+but the advantage is that you don't need to know all column
+names in advance. This is how we support variable column lists
+(two instances of the same Table do not necessarily hold
+the same set of columns, it all depends on what you chose when
+doing the SELECT).
+
+
+=cut
+
+sub Autoload {
+  my ($class, $toggle) = @_;
+
+  croak "Autoload is a class method" if ref($class);
+  croak "Autoload : missing toggle value" if not defined($toggle);
+
+  _defineMethod($class, 'AUTOLOAD', $toggle ? \&_autoload : undef);
+}
+
+sub _autoload {
+   my $self = shift;
+   our $AUTOLOAD;
+   $AUTOLOAD =~ s/^.*:://;
+   return if $AUTOLOAD eq 'DESTROY'; 
+
+   ref($self) and exists $self->{$AUTOLOAD} and return $self->{$AUTOLOAD};
+
+   croak "no method $AUTOLOAD";	# otherwise
+}
+
+
+
 
 
 =head3 Table methods
@@ -1014,6 +1084,7 @@ sub noUpdateColumns {
   return @cols;
 }
 
+
 =head4 autoUpdateColumns
 
 Returns the array of column names and associated handlers
@@ -1029,6 +1100,87 @@ sub autoUpdateColumns {
     unless $self->isSchema;
   return @cols;
 }
+
+
+=head4 selectImplicitlyFor
+
+  MySchema->selectImplicitlyFor('read only')
+  MyClass ->selectImplicitlyFor('update')
+  $val = $myObj->selectImplicitlyFor;
+
+Gets or sets a default value for the C<-for> argument to 
+L</select()>. W
+
+=cut
+
+sub selectImplicitlyFor {
+  my ($self) = @_;
+
+  if (exists($_[1])) {
+    not ref($self) 
+      or croak "selectImplicitlyFor(value) : must be called as class method";
+    return $self->classData->{selectImplicitlyFor} = $_[1];
+  }
+  else {
+    return exists($self->classData->{selectImplicitlyFor}) ? 
+      $self->classData->{selectImplicitlyFor} :  
+      $self->schema->classData->{selectImplicitlyFor};
+  }
+}
+
+
+
+
+
+=head3 Schema class methods
+
+=head4 doTransaction
+
+  MySchema->doTransaction(sub {...});
+
+Evaluates the code withing a transaction. In case of failure,
+the transaction is rolled back, and an exception is raised with
+the error message. Usually the coderef passed as argument will be a
+closure that may refer to variables local to the environment where
+it was created.
+
+=cut
+
+sub doTransaction { 
+  my ($self, $coderef) = @_;
+  $self->isSchema or croak "doTransaction() must be called on a Schema class";
+
+  my $dbh = $self->dbh or croak "no database handle for transaction";
+  my $return_val;
+
+  $dbh->begin_work;
+  (eval { # try the transaction
+    $return_val = $coderef->(); 
+    $dbh->commit; 
+    1;
+    } and return $return_val)
+    or do { # the transaction failed
+      my $errstr = $@;
+      my $rollback_status = 'OK';
+      eval {$dbh->rollback} or $rollback_status = "FAILED $@";
+      croak "FAILED TRANSACTION: $errstr (rollback: $rollback_status)";
+    };
+}
+
+
+=head4 lasth
+
+Returns the last DBI statement handle created by this module.
+
+=cut
+
+sub lasth {
+  my ($self) = @_;
+  $self->isSchema or croak "lasth() must be called on a Schema class";
+  return $self->classData->{lasth};
+}
+
+
 
 =head3 Table class methods
 
@@ -1078,7 +1230,8 @@ sub blessFromDB {
 
   MyTable->select(-columns => \@columns, 
                   -where   => \%where, 
-                  -orderBy => \@order)
+                  -orderBy => \@order
+                  -for     => 'read only') 
   MyTable->select(\@columns, \%where, \@order)
   MyView ->select(\@columns, \%where, \@order)
 
@@ -1114,12 +1267,17 @@ like C<< "col1 DESC, col3, col2 DESC" >>.
 
 =back
 
+If using named arguments, the C<<-for>> argument specifies an 
+additional clause to be added at the end of the SQL statement,
+like for example  C<<-for => 'read only'>>.
+
 No verification is done on the list of retrieved C<< \@columns >>,
 so it is OK if the list does not contain primary or foreign keys --- but then
 later attempts to perform joins or updates will obviously fail.
 
 In addition to these "official" arguments, the method may also take
-a 4th argument C<<-moreWhere>> (hashref), used internally by role methods for
+a 4th positional argument or an argument named C<<-moreWhere>> (hashref),
+used internally by role methods for
 passing join criteria. In that case, entries of the "moreWhere" hash are 
 combined with the entries of the regular "where" hash before building
 the SQL statement. You only need to understand about this if you intend
@@ -1134,6 +1292,8 @@ sub select {
 
   my $sth = &selectSth  # implicitly passing @_
     or return undef;
+
+  $self->schema->classData->{lasth} = $sth;
 
   # fetch data records and bless them into objects
   my $records = $sth->fetchall_arrayref({});
@@ -1166,6 +1326,7 @@ sub selectSth {
   my $self = shift;
   my $class = ref $self || $self;
   my $classData = $class->classData;
+  my $schemaData = $self->schema->classData;
 
   my $args = &_parseSelectArgs;	# implicitly passing @_
   _addSelectCriteria($args, $classData->{where}) if $classData->{where};
@@ -1176,10 +1337,13 @@ sub selectSth {
 				   $args->{-columns}, 
 				   $args->{-where}, 
 				   $args->{-orderBy});
+  exists($args->{-for}) or $args->{-for} = $self->selectImplicitlyFor;
+  $sql .= " FOR $args->{-for}" if $args->{-for};
   $class->_debug($sql);
-  my $sth;
-  $sth = $self->dbh->prepare($sql) and $sth->execute(@bind) and return $sth;
-  return undef; # in case of error
+  my $sth = $self->dbh->prepare($sql);
+  $schemaData->{lasth} = $sth;
+  ($sth->execute(@bind) and return $sth)
+    or return undef; # in case of error
 }
 
 =head4 preselectWhere
@@ -1269,6 +1433,7 @@ sub insert {
     my ($sql, @bind) = $sqlA->insert($table, $record);
     $class->_debug($sql);
     my $sth = $self->dbh->prepare($sql);
+    $self->schema->classData->{lasth} = $sth;
     $sth->execute(@bind);
   }
 }
@@ -1461,10 +1626,20 @@ stores the result in the object itself under C<< $obj->{$role} >>.
 This is typically used to expand an object into a tree datastructure.
 Optional C<< @args >> are passed to C<< $obj->$role(@args) >>.
 
-After the expansion, beware of the difference between
-C<< $obj->{$role} >> (the stored result) and
-C<< $obj->$role >> (calling the role again through a new SQL query).
+After the expansion, further calls to 
+C<< $obj->$role >> (without any arguments) will reuse 
+that same expanded result instead of calling again the database.
+This caching improves efficiency, but also introduces the risk
+of side-effects across your code : after 
 
+  $obj->expand(someRole => (-columns => [qw/just some columns/],
+                            -where   => [someField => 'restriction']))
+
+then further calls to C<< $obj->someRole() >> will just return
+a dataset restricted according to the above criteria, instead
+of a full join. To prevent that effect, you would need to 
+C<< delete $obj->{someRole} >>, or to call the role
+with arguments : C<< $obj->someRole('*') >>.
 
 =cut
 
@@ -1534,37 +1709,6 @@ sub selectFromRoles {
 }
 
 
-=head4 automatic column read accessors through AUTOLOAD
-
-Columns have implicit read accessors through AUTOLOAD. 
-So instead of C<< $record->{column} >> you can write
-C<< $record->column >>. 
-
-I know this is a bit slower than generating all accessors
-(through L<Class::Accessor> or something similar),
-but the advantage is that you don't need to know all column
-names in advance. This is how we support variable column lists
-(two instances of the same Table do not necessarily hold
-the same set of columns, it all depends on what you chose when
-doing the SELECT).
-
-
-=cut
-
-
-sub AUTOLOAD {
-   my $self = shift;
-   our $AUTOLOAD;
-   $AUTOLOAD =~ s/^.*:://;
-   return if $AUTOLOAD eq 'DESTROY'; 
-
-   ref($self) and exists $self->{$AUTOLOAD} and return $self->{$AUTOLOAD};
-
-   croak "no method $AUTOLOAD";	# otherwise
-}
-
-
-
 
 
 
@@ -1594,10 +1738,17 @@ sub _createPackage {
 sub _defineMethod {
   my ($pckName, $methName, $codeRef) = @_;
   my $fullName = $pckName.'::'.$methName;
-  not defined(&{$fullName}) or croak "method $fullName is already defined";
 
   no strict 'refs';
-  *{$fullName} = $codeRef;
+
+  if ($codeRef) {
+    not defined(&{$fullName}) or 
+      croak "method $fullName is already defined";
+    *{$fullName} = $codeRef;
+  }
+  else {
+    delete ${$pckName.'::'}{$methName};
+  }
 }
 
 
@@ -1643,13 +1794,14 @@ sub _modifyData { # called by methods 'update' and 'delete'
   }
 
   # unbless $self into just a hashref and perform the update
-  my $sqlA = $self->schema->classData->{sqlAbstr};
+  my $schemaClassData = $self->schema->classData;
   bless $self, 'HASH';
   my ($sql, @bind) = ($toDo eq 'update') ? 
-                        $sqlA->update($table, $self, \%where) :
-			$sqlA->delete($table, \%where);
+                        $schemaClassData->{sqlAbstr}->update($table, $self, \%where) :
+			$schemaClassData->{sqlAbstr}->delete($table, \%where);
   $class->_debug($sql);
   my $sth = $dbh->prepare($sql);
+  $schemaClassData->{lasth} = $sth;
   $sth->execute(@bind);
 }
 

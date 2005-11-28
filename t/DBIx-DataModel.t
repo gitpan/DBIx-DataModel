@@ -3,7 +3,7 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use Test::More tests => 57;
+use Test::More tests => 62;
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -116,7 +116,7 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '')};
-  skip "DBD::Mock does not seem to be installed", 39 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", 44 if $@ or not $dbh;
 
 
   sub sqlLike { # closure on $dbh
@@ -145,6 +145,10 @@ SKIP: {
   $lst = Employee->select;
   sqlLike('SELECT * FROM t_employee', [], 'empty select');
 
+  $lst = Employee->select(-for => 'read only');
+  sqlLike('SELECT * FROM t_employee FOR READ ONLY', [], 'for read only');
+
+
   $lst = Employee->select([qw/firstname lastname emp_id/],
 			  {firstname => {-like => 'D%'}});
   sqlLike('SELECT firstname, lastname, emp_id '.
@@ -168,6 +172,20 @@ SKIP: {
 	  "ORDER BY d_birth", [], 'order_by select');
 
   $emp->{emp_id} = 999;
+
+  # method call should break without autoload
+die_ok {$emp->emp_id};
+  # now turn it on
+  MySchema->Autoload(1);
+is($emp->emp_id, 999, 'autoload');
+  # turn it off again
+  MySchema->Autoload(0);
+die_ok {$emp->emp_id};
+
+
+
+
+
 
   $lst = $emp->activities;
 
