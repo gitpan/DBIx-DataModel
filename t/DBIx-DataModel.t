@@ -3,7 +3,7 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use Test::More tests => 62;
+use Test::More tests => 66;
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -115,9 +115,8 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 
 SKIP: {
   my $dbh;
-  eval {$dbh = DBI->connect('DBI:Mock:', '', '')};
-  skip "DBD::Mock does not seem to be installed", 44 if $@ or not $dbh;
-
+  eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
+  skip "DBD::Mock does not seem to be installed", 48 if $@ or not $dbh;
 
   sub sqlLike { # closure on $dbh
     my $sql = quotemeta(shift);
@@ -218,6 +217,11 @@ die_ok {$emp->emp_id};
 	    'activities order by');
 
 
+   $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
+   sqlLike('INSERT INTO t_activity (d_begin, d_end, emp_id) ' .
+	     'VALUES (?, ?, ?)', ['2000-01-01', '2000-02-02', 999],
+	    'add_to_activities');
+
   MyView->select({c3 => 22});
 
   sqlLike('SELECT DISTINCT column1 AS c1, t2.column2 AS c2 ' .
@@ -235,6 +239,17 @@ die_ok {$emp->emp_id};
 	  'LEFT OUTER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
 	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles');
+
+
+  my $view2 = MySchema->ViewFromRoles(qw/Employee <=> activities => department/);
+  $view2->select("lastname, dpt_name", {gender => 'F'});
+
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_employee INNER JOIN t_activity ' .
+	  'ON t_employee.emp_id=t_activity.emp_id ' .		
+	  'LEFT OUTER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles with explicit roles');
 
 
   die_ok {$emp->selectFromRoles(qw/activities/)};
