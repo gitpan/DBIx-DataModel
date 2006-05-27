@@ -3,7 +3,7 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use Test::More tests => 66;
+use Test::More tests => 78;
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -13,10 +13,8 @@ BEGIN {use_ok("DBIx::DataModel");}
 
   BEGIN { DBIx::DataModel->Schema('MySchema'); }
 
-ok(MySchema->isa("DBIx::DataModel"), 'Schema defined');
+ok(MySchema->isa("DBIx::DataModel::Schema"), 'Schema defined');
 
-# schemas must derive from main package
-die_ok {MySchema->Schema('SubSchema')};
 
 
 # will not override an existing package
@@ -28,7 +26,7 @@ die_ok {DBIx::DataModel->Schema('DBI');};
     MySchema->Table(Activity   => T_Activity   => qw/act_id/);
   }
 
-ok(Employee->isa("MySchema"), 'Table defined');
+ok(Employee->isa("DBIx::DataModel::Table"), 'Table defined');
 ok(Employee->can("select"), 'select method defined');
 
   package Department;
@@ -52,8 +50,7 @@ die_ok {Employee->Table(Foo    => T_Foo => qw/foo_id/)};
   MySchema->Association([qw/Activity   activities * emp_id/],
 			[qw/Employee   employee   1 emp_id/]);
   MySchema->Association([qw/Activity   activities * dpt_id/],
-			[qw/Department department 1 dpt_id/], 
-		        0, "");
+			[qw/Department department 1 dpt_id/]);
 
 ok(Activity->can("employee"),   'Association 1');
 ok(Employee->can("activities"), 'Association 2');
@@ -65,15 +62,8 @@ ok(Employee->can("activities"), 'Association 2');
      qw/Employee Activity/);
 
 
-ok(MyView->isa("MySchema"), 'View defined'); 
-MyView->can('applyColumnHandlers');
-ok(Employee->can('applyColumnHandlers') eq 
-   Activity->can('applyColumnHandlers'), 
-   'Tables have same meth applyColumnHandlers');
-ok(MyView->can('applyColumnHandlers') ne 
-   Activity->can('applyColumnHandlers'), 
-   'Views have a different meth applyColumnHandlers');
-
+ok(MyView->isa("Employee"), 'MyView ISA Employee'); 
+ok(MyView->isa("Activity"), 'MyView ISA Activity'); 
 
 ok(MyView->can("employee"), 'View inherits roles');
 
@@ -89,7 +79,7 @@ ok(MyView->can("employee"), 'View inherits roles');
   Employee->NoUpdateColumns(qw/last_login/);
 
 is_deeply([Employee->noUpdateColumns], 
-	  [qw/last_login d_modif user_id/], 'noUpdateColumns');
+	  [qw/d_modif user_id last_login/], 'noUpdateColumns');
 
 
   Employee->ColumnHandlers(lastname => normalizeName => sub {
@@ -101,7 +91,7 @@ is_deeply([Employee->noUpdateColumns],
   my $emp = Employee->blessFromDB({firstname => 'Joseph',
 				   lastname  => 'BODIN DE BOISMORTIER',
 				   d_birth   => '1775-12-16'});
-  $emp->applyColumnHandlers('normalizeName');
+  $emp->applyColumnHandler('normalizeName');
 
 is($emp->{d_birth}, '16.12.1775', 'fromDB handler');
 is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
@@ -116,7 +106,7 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", 48 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", 62 if $@ or not $dbh;
 
   sub sqlLike { # closure on $dbh
     my $sql = quotemeta(shift);
@@ -133,12 +123,8 @@ SKIP: {
   }
 
 
-  die_ok {$emp->dbh($dbh)};
-
-  die_ok {Employee->dbh($dbh)};
-
   MySchema->dbh($dbh);
-  isa_ok($emp->dbh, 'DBI::db', 'dbh handle');
+  isa_ok(MySchema->dbh, 'DBI::db', 'dbh handle');
 
   my $lst;
   $lst = Employee->select;
@@ -170,19 +156,50 @@ SKIP: {
 	  'FROM t_employee ' .
 	  "ORDER BY d_birth", [], 'order_by select');
 
+
+
+  $lst = Employee->select(-distinct => "lastname, firstname");
+
+  sqlLike('SELECT DISTINCT lastname, firstname '.
+	  'FROM t_employee' , [], 'distinct 1');
+
+
+  $lst = Employee->select(-distinct => [qw/lastname firstname/]);
+
+  sqlLike('SELECT DISTINCT lastname, firstname '.
+	  'FROM t_employee' , [], 'distinct 2');
+
+
+  $lst = Employee->select(-columns => ['lastname', 
+				       'COUNT(firstname) AS n_emp'],
+			  -groupBy => [qw/lastname/],
+			  -having  => [n_emp => {">=" => 2}],
+			  -orderBy => 'n_emp DESC'
+			 );
+
+
+  sqlLike('SELECT lastname, COUNT(firstname) AS n_emp '.
+	  'FROM t_employee '.
+	  'GROUP BY lastname HAVING ((n_emp >= ?)) '.
+	  'ORDER BY n_emp DESC', [2], 'group by');
+
+
   $emp->{emp_id} = 999;
 
   # method call should break without autoload
 die_ok {$emp->emp_id};
   # now turn it on
   MySchema->Autoload(1);
-is($emp->emp_id, 999, 'autoload');
+is($emp->emp_id, 999, 'autoload schema');
   # turn it off again
   MySchema->Autoload(0);
 die_ok {$emp->emp_id};
-
-
-
+  # turn it on just for the Employee class
+  Employee->Autoload(1);
+is($emp->emp_id, 999, 'autoload table');
+  # turn it off again
+  Employee->Autoload(0);
+die_ok {$emp->emp_id};
 
 
 
@@ -252,6 +269,19 @@ die_ok {$emp->emp_id};
 	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles with explicit roles');
 
 
+
+
+  my $view3 = MySchema->ViewFromRoles(qw/Activity employee department/);
+  $view3->select("lastname, dpt_name", {gender => 'F'});
+
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_activity INNER JOIN t_employee ' .
+	  'ON t_activity.emp_id=t_employee.emp_id ' .		
+	  'INNER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles with indirect role');
+
+
   die_ok {$emp->selectFromRoles(qw/activities/)};
   die_ok {$emp->selectFromRoles(qw/activities foo/)};
   die_ok {$emp->selectFromRoles(qw/foo bar/)};
@@ -264,6 +294,30 @@ die_ok {$emp->emp_id};
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
 	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
 	  'selectFromRoles ');
+
+
+  MySchema->Association([qw/Employee   employees   * activities employee/],
+			[qw/Department departments * activities department/]);
+
+  my $dpts = $emp->departments(-where =>{gender => 'F'});
+  sqlLike('SELECT * ' .
+	  'FROM t_activity ' .
+	  'INNER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
+	  'N-to-N Association ');
+
+
+  my $dpt = bless {dpt_id => 123}, 'Department';
+  my $empls = $dpt->employees;
+  sqlLike('SELECT * ' .
+	  'FROM t_activity ' .
+	  'INNER JOIN t_employee ' .
+	  'ON t_activity.emp_id=t_employee.emp_id ' .
+	  'WHERE (dpt_id = ?)', [123], 
+	  'N-to-N Association 2 ');
+
+
 
 
   Employee->update(999, {firstname => 'toto', 
@@ -323,6 +377,21 @@ die_ok {$emp->emp_id};
 	  "WHERE ( emp_id = ? )", [888], 'spouse self-ref assoc.');
 
 
+  # testing -preExec / -postExec
+  my %check_callbacks;
+  Employee->select(-where => {foo=>'bar'},
+		   -preExec => sub {$check_callbacks{pre} = "was called"},
+		   -postExec => sub {$check_callbacks{post} = "was called"},);
+  is_deeply(\%check_callbacks, {pre =>"was called", 
+				post => "was called" }, 'select, pre/post callbacks');
+
+  %check_callbacks = ();
+  Employee->fetch(1234, {-preExec => sub {$check_callbacks{pre} = "was called"},
+			 -postExec => sub {$check_callbacks{post} = "was called"}});
+  is_deeply(\%check_callbacks, {pre =>"was called", 
+				post => "was called" }, 'fetch, pre/post callbacks');
+
+
 };
 
 
@@ -334,7 +403,8 @@ TODO:
 hasInvalidFields
 expand
 autoExpand
-AUTOLOAD
+MethodFromRoles
+
 document the tests !!
 
 

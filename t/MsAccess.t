@@ -11,8 +11,8 @@ sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
 BEGIN {use_ok("DBIx::DataModel");}
 
-  BEGIN { DBIx::DataModel->Schema('MySchema'); }
-
+  BEGIN { DBIx::DataModel->Schema('MySchema', sqlDialect => 'MsAccess'); }
+  
   BEGIN {
     MySchema->Table(Employee   => T_Employee   => qw/emp_id/);
     MySchema->Table(Department => T_Department => qw/dpt_id/);
@@ -68,7 +68,7 @@ SKIP: {
 
   my $emp = Employee->blessFromDB({emp_id => 999});
 
-  MySchema->SqlDialect('MsAccess');
+
 
   my $view = MySchema->ViewFromRoles(qw/Employee activities department/);
 

@@ -1,6 +1,23 @@
 Revision history for Perl extension DBIx::DataModel.
 
-v0.16
+v0.20 CPAN release 27.05.2006
+	
+v0.18, v0.19 - internal releases, major rewrite:
+  - reshuffled the inheritance tree
+  - restructured the documentation
+  - selectFromRoles() accepts roles from any table in the stack
+  - added many-to-many Associations
+  - added MethodFromRole()
+  - added -distinct, -groupBy and -having clauses
+  - insert() returns DBI->last_insert_id()
+
+
+v0.17
+  - Minor fixes in documentation
+  - SqlDialect() is deprecated (replaced by arg in Schema() method)
+
+
+v0.16 CPAN release 26.01.2006
   - Associations now install an "insert_into_..." method
   - ViewFromRoles can take explicit join kinds (_INNER_|_LEFT_)
   - Schema->dbh(..) checks that RaiseError is true
@@ -36,7 +53,6 @@ v0.11 internal release
   - Changed implementation of ViewFromRoles, using INNER JOIN
 
 v0.10 16.09.2005 First CPAN release, 
-
 
 
 
