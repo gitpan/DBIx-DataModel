@@ -7,8 +7,8 @@ lib/DBIx/DataModel/Iterator.pm
 lib/DBIx/DataModel/Schema.pm
 lib/DBIx/DataModel/Table.pm
 lib/DBIx/DataModel/View.pm
-MANIFEST
-META.yml			# Will be created by "make dist"
+MANIFEST			This list of files
+META.yml
 README
 t/00-load.t
 t/DBIx-DataModel.t

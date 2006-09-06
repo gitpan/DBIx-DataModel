@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.20';
+our $VERSION = '0.21';
 
 
 sub Schema {	
@@ -2014,7 +2014,7 @@ level. As a result, your validation handlers can check if an existent
 column is empty, but cannot check if a column is missing (because in
 that case the handler would not be called).
 
-Your 'validate' handlers, defined through L<ColumnHandlers>,
+Your 'validate' handlers, defined through L</ColumnHandlers>,
 should return 0 or an empty string whenever the column value is invalid.
 Never return C<undef>, because we would no longer be able to
 distinguish between an invalid existent column and a missing column.
@@ -2089,7 +2089,7 @@ L</"Self-referential associations"> below.
 
 If the optional C<< $multiplicity >> argument contains C<1> or C<'0..1'>,
 then the function behaves like 
-L<fetch()/fetch> rather than C<select()|/select>: 
+L<fetch()|/fetch> rather than C<select()|/select>: 
 that is, the result of C<< $meth->(...) >> will be a single 
 recordref, rather than an arrayref of records.
 

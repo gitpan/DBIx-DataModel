@@ -1,6 +1,6 @@
 ---
 name: DBIx-DataModel
-version: 0.20
+version: 0.21
 author:
   - 'Laurent Dami <laurent.dami AT etat.ge.ch>'
 abstract: Classes and UML-style Associations on top of DBI
@@ -8,12 +8,15 @@ license: perl
 requires:
   Carp: 0
   DBI: 0
+  Module::Build: 0
   SQL::Abstract: 0
   Test::More: 0
+recommends:
+  DBD::Mock: 0
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 0.20
+    version: 0.21
   DBIx::DataModel::AbstractTable:
     file: lib/DBIx/DataModel/AbstractTable.pm
   DBIx::DataModel::Base:

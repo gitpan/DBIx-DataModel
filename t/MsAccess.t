@@ -46,7 +46,7 @@ BEGIN {use_ok("DBIx::DataModel");}
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", 5 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", 4 if $@ or not $dbh;
 
 
   sub sqlLike { # closure on $dbh

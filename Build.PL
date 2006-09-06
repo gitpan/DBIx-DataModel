@@ -12,6 +12,10 @@ my $builder = Module::Build->new(
 	'Carp'          => 0,
 	'DBI'           => 0,
 	'SQL::Abstract' => 0,
+	'Module::Build' => 0,
+    },
+    recommends => {
+        'DBD::Mock'    => 0,
     },
     add_to_cleanup      => [ 'DBIx-DataModel-*' ],
 );

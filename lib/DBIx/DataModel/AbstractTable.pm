@@ -149,7 +149,7 @@ sub select {
 
     /sql/i           and do { return wantarray ? ($sql, @bind) : $sql; };
 
-    # prepare and execute DBI statement 
+    # for all other cases, prepare and execute DBI statement 
     my $dbh = $self->schema->dbh or croak "Schema has no dbh";
     my $sth = $dbh->prepare($sql);
     $self->schema->classData->{lasth} = $sth  if $self->schema->keepLasth;
@@ -167,7 +167,8 @@ sub select {
                              $class->blessFromDB($_) foreach @$records;
 			     return $records; };
 
-
+    # otherwise
+    croak "unknown -resultAs value: $_"; 
   }
 }
 

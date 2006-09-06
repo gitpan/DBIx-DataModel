@@ -1,5 +1,11 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.21 CPAN release 06.09.2006
+  - check args for ViewFromRoles
+  - check -resultAs value
+  - fixed SKIP numbers in tests (when DBD::Mock is not installed)
+  - fixed requires and recommends in Build.pl
+
 v0.20 CPAN release 27.05.2006
 	
 v0.18, v0.19 - internal releases, major rewrite:

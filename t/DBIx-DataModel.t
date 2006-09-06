@@ -106,7 +106,7 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", 62 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", 63 if $@ or not $dbh;
 
   sub sqlLike { # closure on $dbh
     my $sql = quotemeta(shift);

@@ -235,6 +235,9 @@ sub _Assoc_many {
 sub ViewFromRoles {
   my ($class, $table, @roles) = @_;
 
+  croak "ViewFromRoles: improper argument (ref)" 
+    if ref($table) or grep {ref $_} @roles;
+
   foreach (@roles) {
     s[^(INNER|<=>)$] [_INNER_];
     s[^(LEFT|=>)$]   [_LEFT_];
