@@ -19,11 +19,10 @@ BEGIN {use_ok("DBIx::DataModel");}
     MySchema->Table(Activity   => T_Activity   => qw/act_id/);
   }
 
-  MySchema->Association([qw/Activity   activities * emp_id/],
-			[qw/Employee   employee   1 emp_id/]);
+  MySchema->Composition([qw/Employee   employee   1 /],
+                        [qw/Activity   activities * /]);
   MySchema->Association([qw/Activity   activities * dpt_id/],
-			[qw/Department department 1 dpt_id/], 
-		        0, "");
+			[qw/Department department 1 dpt_id/]);
 
   MySchema->ColumnType(Date => 
      fromDB   => sub {$_[0] =~ s/(\d\d\d\d)-(\d\d)-(\d\d)/$3.$2.$1/},
@@ -40,7 +39,7 @@ BEGIN {use_ok("DBIx::DataModel");}
 			    $_[0] =~ s/\w+/\u\L$&/g
 			  });
 
-  Activity->AutoExpand(qw/employee/);
+  Employee->AutoExpand(qw/activities/);
 
 
 SKIP: {

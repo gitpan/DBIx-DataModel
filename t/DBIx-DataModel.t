@@ -3,7 +3,10 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use Test::More tests => 78;
+use constant N_DBI_MOCK_TESTS => 71;
+use constant N_BASIC_TESTS    => 15;
+
+use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -47,10 +50,11 @@ die_ok {Employee->Table(Foo    => T_Foo => qw/foo_id/)};
 
 
 
-  MySchema->Association([qw/Activity   activities * emp_id/],
-			[qw/Employee   employee   1 emp_id/]);
-  MySchema->Association([qw/Activity   activities * dpt_id/],
-			[qw/Department department 1 dpt_id/]);
+  MySchema->Composition([qw/Employee   employee   1 /],
+                        [qw/Activity   activities * /]);
+
+  MySchema->Association([qw/Department department 1 /],
+                        [qw/Activity   activities * /]);
 
 ok(Activity->can("employee"),   'Association 1');
 ok(Employee->can("activities"), 'Association 2');
@@ -86,7 +90,7 @@ is_deeply([Employee->noUpdateColumns],
 			    $_[0] =~ s/\w+/\u\L$&/g
 			  });
 
-  Activity->AutoExpand(qw/employee/);
+  Employee->AutoExpand(qw/activities/);
 
   my $emp = Employee->blessFromDB({firstname => 'Joseph',
 				   lastname  => 'BODIN DE BOISMORTIER',
@@ -106,19 +110,35 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", 63 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", N_DBI_MOCK_TESTS 
+    if $@ or not $dbh;
+
+
+  # DBD::Mock has an attribute holding a fake last_insert_id, but
+  # does not implement the method last_insert_id(). So we fill the gap...
+  sub DBD::Mock::db::last_insert_id {
+    my ( $dbh ) = @_;
+    return $dbh->{mock_last_insert_id};
+  }
+
+  # sqlLike : takes a list of SQL regex and bind params, and a test msg.
+  # Checks if those matche with the DBD::Mock history.
 
   sub sqlLike { # closure on $dbh
-    my $sql = quotemeta(shift);
-    my $bind = shift;
-    my $msg = shift;
-    $sql =~ s/(\\?\s)+/\\s+/gs;
-    $sql =~ s/\\\(/\\(\\s*/g;
-    $sql =~ s/\\\)/\\s*\\)/g;
-    my $regex = qr/^\s*$sql\s*$/i;
-    my $dbd_last = $dbh->{mock_all_history}[-1];
-    like($dbd_last->statement, $regex, "$msg (SQL)");
-    is_deeply($dbd_last->bound_params, $bind, "$msg (params)");
+    my $msg = pop @_;    
+
+    for (my $hist_index = -(@_ / 2); $hist_index < 0; $hist_index++) {
+      my $sql  = quotemeta(shift);
+      my $bind = shift;
+
+      $sql =~ s/(\\?\s)+/\\s+/gs;
+      $sql =~ s/\\\(/\\(\\s*/g;
+      $sql =~ s/\\\)/\\s*\\)/g;
+      my $regex = qr/^\s*$sql\s*$/i;
+      my $hist = $dbh->{mock_all_history}[$hist_index];
+      like($hist->statement, $regex, "$msg (SQL)");
+      is_deeply($hist->bound_params, $bind, "$msg (params)");
+    }
     $dbh->{mock_clear_history} = 1;
   }
 
@@ -184,6 +204,15 @@ SKIP: {
 	  'ORDER BY n_emp DESC', [2], 'group by');
 
 
+
+  $lst = Employee->select(-orderBy => [qw/+col1 -col2 +col3/]);
+  sqlLike('SELECT * FROM t_employee ORDER BY col1 ASC, col2 DESC, col3 ASC', 
+          [], '-orderBy prefixes');
+
+
+
+
+
   $emp->{emp_id} = 999;
 
   # method call should break without autoload
@@ -238,6 +267,33 @@ die_ok {$emp->emp_id};
    sqlLike('INSERT INTO t_activity (d_begin, d_end, emp_id) ' .
 	     'VALUES (?, ?, ?)', ['2000-01-01', '2000-02-02', 999],
 	    'add_to_activities');
+
+
+  # test cascaded inserts
+
+  my $tree = {firstname  => "Johann Sebastian",  
+              lastname   => "Bach",
+              activities => [{d_begin  => '01.01.1707',
+                              d_end    => '01.07.1720',
+                              dpt_code => 'Maria-Barbara'},
+                             {d_begin  => '01.12.1721',
+                              d_end    => '18.07.1750',
+                              dpt_code => 'Anna-Magdalena'}]};
+
+
+  my $emp_id = Employee->insert($tree);
+  my $sql_insert_activity = 'INSERT INTO t_activity (d_begin, d_end, '
+                          . 'dpt_code, emp_id) VALUES (?, ?, ?, ?)';
+
+  sqlLike('INSERT INTO t_employee (firstname, lastname) VALUES (?, ?)',
+          ["Johann Sebastian", "Bach"],
+          $sql_insert_activity, 
+          ['1707-01-01', '1720-07-01', 'Maria-Barbara', $emp_id],
+          $sql_insert_activity, 
+          ['1721-12-01', '1750-07-18', 'Anna-Magdalena', $emp_id],
+          "cascaded insert");
+
+
 
   MyView->select({c3 => 22});
 

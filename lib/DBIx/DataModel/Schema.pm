@@ -145,10 +145,26 @@ sub Association {
   my ($table1, $role1, $multipl1, @cols1) = @$args1;
   my ($table2, $role2, $multipl2, @cols2) = @$args2;
 
-  @cols1 == @cols2 or croak "Association: numbers of columns do not match";
+  my $implement_assoc = "_Assoc_normal";
 
-  my $implement_assoc =  ($multipl1 =~ /\*/ and $multipl2 =~ /\*/) ? 
-                            "_Assoc_many" : "_Assoc_one";
+  my $many1 = _multipl_max($multipl1) > 1 ? "T" : "F";
+  my $many2 = _multipl_max($multipl2) > 1 ? "T" : "F";
+
+  # handle implicit column names
+  for ($many1 . $many2) {
+    /^TT/ and do {$implement_assoc = "_Assoc_many_many"; 
+                  last};
+    /^TF/ and do {@cols2 or @cols2 = $table2->primKey;
+                  @cols1 or @cols1 = @cols2;
+                  last};
+    /^FT/ and do {@cols1 or @cols1 = $table1->primKey;
+                  @cols2 or @cols2 = @cols1;
+                  last};
+    /^FF/ and do {@cols1 && @cols2 
+                         or croak "Association: columns must be explicit "
+                                . "with multiplicities $multipl1 / $multipl2";};
+  }
+  @cols1 == @cols2 or croak "Association: numbers of columns do not match";
 
   $schema->$implement_assoc($table1, $role1, $multipl1, \@cols1, 
 			    $table2, $multipl2, \@cols2);
@@ -156,8 +172,8 @@ sub Association {
 			    $table1, $multipl1, \@cols1);
 }
 
-# Association implementation, when one side is of multiplicity one
-sub _Assoc_one { 
+# Normal Association implementation, when one side is of multiplicity one
+sub _Assoc_normal { 
   my ($schema, $table, $role, $multipl, $cols_ref, 
                $foreign_table, $foreign_multipl, $foreign_cols_ref) = @_;
 
@@ -185,7 +201,8 @@ sub _Assoc_one {
   $schema->_defineMethod($foreign_table, $role, $select_meth);
 
 
-  if ($multipl =~ /\*/) { # one to many, so install an "insert_into_" method
+  if (_multipl_max($multipl) > 1) { # one to many
+
     my $m_name = "insert_into_$role";
 
     # build insert method as a closure, and install it into foreign table
@@ -218,18 +235,39 @@ sub _Assoc_one {
 
 
 # special implementation for many-to-many Association
-sub _Assoc_many {
+sub _Assoc_many_many {
   my ($schema, $table, $role, $multipl, $cols_ref, 
                $foreign_table, $foreign_multipl, $foreign_cols_ref) = @_;
 
   scalar(@$cols_ref) == 2 or 
     croak "improper number of roles in many-to-many association";
   $foreign_table->MethodFromRoles($role => @$cols_ref);
-
-  # TODO : install the insert_into_* method
 }
 
 
+sub Composition {
+  my ($schema, $args1, $args2) = @_;
+
+  my ($table1, $role1, $multipl1, @cols1) = @$args1;
+  my ($table2, $role2, $multipl2, @cols2) = @$args2;
+  _multipl_max($multipl1) == 1
+    or croak "max multiplicity of first class in a composition must be 1";
+  _multipl_max($multipl2) > 1
+    or croak "max multiplicity of second class in a composition must be > 1";
+
+  # check for conflicting compositions
+  my $component_of = $table2->classData->{component_of} || {};
+  while (my ($composite, $multipl) = each %$component_of) {
+    _multipl_min($multipl) == 0 
+      or croak "$table2 can't be a component of $table1 "
+             . "(already component of $composite)";
+  }
+  $table2->classData->{component_of}{$table1} = $multipl1;
+
+  # implement the association
+  $schema->Association($args1, $args2);
+  $schema->classData->{joins}{$table1}{$role2}{is_composition} = 1;
+}
 
 
 sub ViewFromRoles {
@@ -243,7 +281,7 @@ sub ViewFromRoles {
     s[^(LEFT|=>)$]   [_LEFT_];
   }
 
-  my $viewName = join "", $table, map(ucfirst, @roles);  
+  my $viewName = join "", "${class}::AutoView::", $table, map(ucfirst, @roles);  
   return $viewName if defined (%{$viewName.'::'}); # view was already generated
 
   # 1) go through the roles and accumulate information 
@@ -281,7 +319,7 @@ sub ViewFromRoles {
       # THINK : maybe should not allow forced _INNER_ after an initial _LEFT_
       $forcedJoin = undef;
     }
-    elsif ($joinData->{multiplicity} =~ m/^(0|\*)/) {
+    elsif (_multipl_min($joinData->{multiplicity}) == 0) {
       $joinInto = \@leftJoins;
     }
 
@@ -347,12 +385,15 @@ sub Autoload { # forward to AbstractTable so that Tables and Views inherit it
 #----------------------------------------------------------------------
 
 sub dbh {
-  my ($class, $dbh) = @_;
+  my ($class, $dbh, %options) = @_;
+  my $classData = $class->classData;
   if ($dbh) {
     $dbh->{RaiseError} or croak "arg to dbh(..) must have RaiseError=1";
-    $class->classData->{dbh} = $dbh;
+    $classData->{dbh}         = $dbh;
+    $classData->{dbh_options} = \%options;
   }
-  return $class->classData->{dbh};
+  return wantarray ? ($classData->{dbh}, %{$classData->{dbh_options}})
+                   : $classData->{dbh};
 }
 
 sub debug { 
@@ -487,6 +528,32 @@ sub _defineMethod {
   else {
     delete ${$pckName.'::'}{$methName};
   }
+}
+
+
+#----------------------------------------------------------------------
+# UTILITY FUNCTIONS (PRIVATE)
+#----------------------------------------------------------------------
+
+
+sub _multipl_min {
+  my $multiplicity = shift;
+  for ($multiplicity) {
+    /^(\d+)/ and return $1;
+    /^[*n]$/ and return 0;
+  }
+  croak "illegal multiplicity : $multiplicity";
+}
+
+use constant LARGE_NUMBER => 9999;
+
+sub _multipl_max {
+  my $multiplicity = shift;
+  for ($multiplicity) {
+    /(\d+)$/ and return $1;
+    /[*n]$/  and return LARGE_NUMBER;
+  }
+  croak "illegal multiplicity : $multiplicity";
 }
 
 

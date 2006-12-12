@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.21';
+our $VERSION = '0.28';
 
 
 sub Schema {	
@@ -42,13 +42,13 @@ Each table then becomes a Perl package.
   MySchema->Table(qw/Department Department dpt_id/);
   MySchema->Table(qw/Activity   Activity   act_id/);
 
-Declare associations in UML style
+Declare associations or compositions in UML style
 ( C<< [table1 role1 multiplicity1 join1], [table2...] >>).
 
-  MySchema->Association([qw/Activity   activities * emp_id/],
-                        [qw/Employee   employee   1 emp_id/]);
-  MySchema->Association([qw/Activity   activities * dpt_id/],
-                        [qw/Department department 1 dpt_id/]);
+  MySchema->Composition([qw/Employee   employee   1 /],
+                        [qw/Activity   activities * /]);
+  MySchema->Association([qw/Department department 1 /],
+                        [qw/Activity   activities * /]);
 
 Declare a n-to-n association, on top of the linking table
 
@@ -414,7 +414,7 @@ This is the approach taken by C<DBIx::DataModel>.
 =head2 High-level declarative statements
 
 
-=head3 Relationships expressed as UML associations
+=head3 Relationships expressed as UML associations 
 
 Relationships are expressed in a syntax
 designed to closely reflect how they would be pictured
@@ -426,20 +426,20 @@ form is :
 
 yielding for example the following declaration
 
-  MySchema->Association([qw/Employee   employee   1    emp_id/],
-                        [qw/Activity   activities 0..* emp_id/]);
+  MySchema->Association([qw/Department department 1 /],
+                        [qw/Activity   activities * /]);
 
 
 which corresponds to UML diagram
 
-  +----------+                         +------------+
-  |          | 1                  0..* |            |
-  | Employee +-------------------------+ Activities |
-  |          | employee     activities |            |
-  +----------+                         +------------+
+  +------------+                         +------------+
+  |            | 1                  0..* |            |
+  | Department +-------------------------+ Activities |
+  |            | department   activities |            |
+  +------------+                         +------------+
 
 
-This states that there is an association between classes C<Employee>
+This states that there is an association between classes C<Department>
 and C<Activity>, with the corresponding role names (roles are used
 to navigate through the association in both directions), and with the 
 corresponding multiplicities (here an activity corresponds to exactly 
@@ -454,12 +454,10 @@ are mandatory, because they are needed for code generation.
 The association declaration is bidirectional, so it will
 simultaneously add features in both participating classes.
 
-The last items in that declaration, namely C<emp_id> on both lines,
-define the names of columns to join in order to navigate across the
-association.  Admitedly, this is an implementation detail, that would
-not be pictured in a conceptual UML diagram; however we need it here
-so that the framework can later generate the appropriate SQL join
-statements.
+In order to generate the appropriate SQL join statements, the
+framework needs to know the join column names on both sides; these
+can be either given explicitly in the declaration, or they are guessed
+from the primary key of the table with multiplicity 1.
 
 Role names declared in the association are used for a number of
 purposes : implementing methods for direct navigation, implementing
@@ -490,6 +488,24 @@ C<DBIx::DataModel> has no "loader" facility to automatically
 generate a schema.
 
 
+=head3 UML compositions for handling data trees
+
+Compositions are specific kinds of associations, pictured in UML
+with a black diamond on the side of the I<composite> class; 
+in C<DBIx::DataModel>, those are expressed by calling the
+schemas's  L</"Composition"> method instead of L</"Association">.
+As a result, the composite class will be able to perform
+cascaded insertions and deletions on data trees (for example 
+from structured data received through an external XML or JSON file, and
+inserted into the database in a single method call).
+
+The reverse is also true : the composite class is able 
+to automatically call its own methods to gather data from associated
+classes and build a complete data tree in memory. This is declared through
+the L</"AutoExpand"> method and is useful for passing structured data
+to external modules, like for example XML or JSON exports.
+
+
 =head3 ColumnTypes
 
 A C<DBIx::DataModel> schema can declare some I<column types> : these
@@ -518,15 +534,6 @@ a column type as defined here is just a way to specify some
 operations, programmed in Perl, that can be performed on the
 scalar values.
 
-=head3 Autoexpand : build a data tree
-
-An I<autoexpand> declaration specifies how a given class will
-automatically call its own methods to gather data from associated
-classes, and build a complete data tree in memory.  This is especially
-useful in cases that UML calls aggregations or compositions (various
-kinds of part-of relationships). Once the composite data is gathered
-in memory, it can be passed to external modules that need to walk
-through the tree, for example for XML or Json exports.
 
 =head3 Autoload on demand
 
@@ -620,7 +627,7 @@ system.
 
 Before starting with C<DBIx::DataModel>, you should have 
 installed CPAN modules L<DBI|DBI> and L<SQL::Abstract|SQL::Abstract>.
-You also need a database management system with a L<DBD> driver. 
+You also need a database management system with a L<DBD|DBD> driver. 
 
 Use your database modeling tool to create some tables for employees,
 departments, activities (an employee working in a department from
@@ -659,7 +666,9 @@ As can be seen from this SQL, we assume that the primary keys
 for C<t_employee> and C<t_activity> are generated
 automatically by the RDBMS. Primary keys for other tables
 are character codes and therefore should be supplied by
-the client program.
+the client program. We decided to use the suffixes
+C<_id> for auto-generated keys, and C<_code> for user-supplied
+codes.
 
 =head2 Declare schema and tables
 
@@ -721,45 +730,73 @@ I<applies> the column type to some columns.
 
 =head2 Declare associations
 
-Now we will declare a binary association between employees
+=head3 Basic associations
+
+Now we will declare a binary association between departements
 and activities:
 
-  HR->Association([qw/HR::Employee   employee    1 emp_id/],
-                  [qw/HR::Activity   activities  * emp_id/]);
+  HR->Association([qw/HR::Department department  1 /],
+                  [qw/HR::Activity   activities  * /]);
 
 The C<Association> method takes two references to lists of arguments;
 in each of them, we find : class name, role name, multiplicity, and
-names of columns participating in the join. Since associations
+optionally the names of columns participating in the join. Here
+column names are not specified, so the method assumes that the join
+is on C<dpt_code> (from the primary key of the class
+with multiplicity 1 in the association). Since associations
 are symmetric, you could as well supply the two lists in the
-reverse order.
+reverse order.  
 
 The declaration should be read crosswise, like when reading a UML
-class diagram : here we are stating that an employee may be associated
-with several activities; therefore the C<HR::Employee> class will
+class diagram : here we are stating that a department may be associated
+with several activities; therefore the C<HR::Department> class will
 contain an C<activities> method which returns an arrayref. Conversely,
-an activity is associated with exactly one employee, so the
-C<HR::Activity> will contain an C<employee> method which returns a
-single instance of C<HR::Employee>.
+an activity is associated with exactly one department, so the
+C<HR::Activity> class will contain a C<department> method which returns a
+single instance of C<HR::Department>.
 
-The second association is defined in a similar way :
 
-  HR->Association([qw/HR::Department department  1 dpt_code/],
-                  [qw/HR::Activity   activities  * dpt_code/]);
+=head3 Compositions
+
+The second association could be defined in a similar way; but here
+we will introduce the new concept of I<composition>. 
+
+  HR->Composition([qw/HR::Employee   employee    1 /],
+                  [qw/HR::Activity   activities  * /]);
+
+This looks exactly like an association declaration; but it states
+that an activity somehow "belongs" to an employee (cannot exist
+without being attached to an employee, and is often created and 
+deleted together with the employee). In a UML class diagram, this
+would be pictured with a black diamond on the Employee side.
+Using a composition instead of an association in this particular
+example would perhaps be debated by some data modelers; but at least
+it allows us to illustrate the concept.
+
+A composition declaration behaves in all respects like an association.
+The main difference is in C<insert> and C<delete> methods, which will
+be able to perform more complex operations on data trees : for example 
+it will be possible in one method call to insert an employee together
+with its activities. Compositions also support auto-expansion 
+of data trees through the L<AutoExpand|/"AutoExpand"> method.
+
+
+=head3 Many-to-many associations
 
 Now comes the association between employees and skills, which
 is a many-to-many association. This happens in two steps: first
 we declare as usual the associations with the linking table :
 
-  HR->Association([qw/HR::Employee      employee   1 emp_id/],
-                  [qw/HR::EmployeeSkill emp_skills * emp_id/]);
+  HR->Association([qw/HR::Employee      employee   1 /],
+                  [qw/HR::EmployeeSkill emp_skills * /]);
 
-  HR->Association([qw/HR::Skill         skill      1 skill_code/],
-                  [qw/HR::EmployeeSkill emp_skills * skill_code/]);
+  HR->Association([qw/HR::Skill         skill      1 /],
+                  [qw/HR::EmployeeSkill emp_skills * /]);
 
 Then we declare the many-to-many association:
 
-  HR->Association([qw/HR::Employee  employees   * emp_skills employee/],
-                  [qw/HR::Skill     skills      * emp_skills skill   /]);
+  HR->Association([qw/HR::Employee  employees  *  emp_skills employee/],
+                  [qw/HR::Skill     skills     *  emp_skills skill   /]);
 
 This looks almost exactly like the previous declarations, except that
 the last arguments are no longer column names, but rather I<role names>:
@@ -778,8 +815,8 @@ connection :
 Now we can start populating the database:
 
   my ($bach_id, $berlioz_id, $monteverdi_id) = 
-    HR::Employee->insert({firstname => "Johann",  lastname => "Bach"},
-                         {firstname => "Hector",  lastname => "Berlioz"},
+    HR::Employee->insert({firstname => "Johann",  lastname => "Bach"      },
+                         {firstname => "Hector",  lastname => "Berlioz"   },
                          {firstname => "Claudio", lastname => "Monteverdi"});
 
 Observe that several rows can be created at once (of course you get the
@@ -792,10 +829,10 @@ supports DBI's L<last_insert_id|DBI/last_insert_id> method).
 Similarly, we create some departments and skills (here with 
 explicit primary keys) :
 
-  HR::Department->insert({dpt_code => "CPT",  dpt_name => "Counterpoint"},
+  HR::Department->insert({dpt_code => "CPT",  dpt_name => "Counterpoint" },
 			 {dpt_code => "ORCH", dpt_name => "Orchestration"});
 
-  HR::Skills->insert({skill_code => "VL",  skill_name => "Violin"},
+  HR::Skills->insert({skill_code => "VL",  skill_name => "Violin"  },
                      {skill_code => "KB",  skill_name => "Keyboard"},
                      {skill_code => "GT",  skill_name => "Guitar"},
 
@@ -806,7 +843,7 @@ Here is an example with the class method :
 
 Associations have their own insert methods, named C<insert_into_*> :
 
-  my $bach = HR::Employee->fetch($bach_id);
+  my $bach = HR::Employee->fetch($bach_id); # get single record from prim.key
   
   $bach->insert_into_activities({d_begin => '01.01.1695',
 			         d_end   => '18.07.1750',
@@ -815,10 +852,16 @@ Associations have their own insert methods, named C<insert_into_*> :
   $bach->insert_into_emp_skills({skill_code => 'VL'},
 			        {skill_code => 'KB'});
 
+Compositions implement cascaded inserts from a given data tree :
 
-The C<fetch()> method above retrieves one single record
-from its primary key. To get several records, use the
-the C<select()> method :
+  HR::Employee->insert({firstname  => "Richard",  
+                        lastname   => "Strauss",
+                        activities => [ {d_begin  => '01.01.1874',
+                                         d_end    => '08.09.1949',
+                                         dpt_code => 'ORCH'      } ]});
+
+
+The C<select()> method retrieves several records from a class :
 
   my $all_employees = HR::Employee->select; 
   foreach my $emp (@$all_employees) {
@@ -839,8 +882,8 @@ objects :
 
   foreach my $emp (@$all_employees) {
     print "$emp->{firstname} $emp->{lastname} ";
-    my @skills = map {$_->{skill_name}  }} @{$emp->skills};
-    print " has skills ", join(", ", @skills) if @skills;
+    my @skill_names = map {$_->{skill_name}  }} @{$emp->skills};
+    print " has skills ", join(", ", @skill_names) if @skill_names;
   }
 
 Passing arguments to role methods, we can restrict to 
@@ -858,7 +901,7 @@ And it is possible to join on several roles at once:
                        ->(-columns => \@columns,
                           -where   => \%criteria);
 
-This concludes this short tutorial. More examples are given
+This concludes our short tutorial. More examples are given
 in the reference section below.
 
 
@@ -1040,12 +1083,39 @@ the same table), in a UML-like fashion. Each side of the association
 specifies its table, the "rolename" of of this table in the
 association, the multiplicity, and the name of the column or list of
 columns that technically implement the association as a database
-join. Multiplicities should be written in the UML form '0..*', '1..*',
+join. 
+
+Role names should be chosen so as to avoid
+conflicts with column names in the same table.
+
+Multiplicities should be written in the UML form '0..*', '1..*',
 '0..1', etc. (minimum .. maximum number of occurrences); this will
 influence how role methods and views are implemented, as explained
-below. Multiplicity '*' is a shortcut for '0..*', and multiplicity '1'
-is a shortcut for '1..1'. Role names should be chosen so as to avoid
-conflicts with column names in the same table.
+below. The '*' for "infinite" may also be written 'n',
+i.e. '1..n'. Multiplicity '*' is a shortcut for '0..*', and
+multiplicity '1' is a shortcut for '1..1'. Other numbers may be given
+as multiplicity bounds, but this will be just documentary :
+technically, all that matters is
+
+=over
+
+=item *
+
+whether the lower bound is 0 or more (if 0, generated
+joins will be left joins, otherwise inner joins)
+
+=item *
+
+whether the upper bound is 1 or more (if 1, the associated
+method returns a single object, otherwise it returns an arrayref)
+
+=back
+
+If C<@columns1> or C<@columns2> are omitted, they are guessed 
+as follows : for the table with multiplicity C<1> or C<0..1>,
+the default is the primary key; for the other table, the default
+is to take the same column names as the other side of the association.
+
 
 =head4 Roles as additional methods in table classes
 
@@ -1077,8 +1147,8 @@ around.
 Role methods perform joins within Perl (as opposed to joins
 directly performed within the database). That is, given a declaration
 
-  MySchema->Association([qw/Employee   employee   1    emp_id/],
-                        [qw/Activity   activities 0..* emp_id/]);
+  MySchema->Association([qw/Employee   employee   1   /],
+                        [qw/Activity   activities 0..*/]);
 
 we can call
 
@@ -1093,13 +1163,13 @@ in L<SQL::Abstract> format, exactly like the
 L<select()|/"select"> method. So for example
 
   my $activities = $anEmployee->activities(-columns => [qw/act_name salary/],
-                                           -where   => {isActive => 'Y'});
+                                           -where   => {is_active => 'Y'});
 
 would perform the following SQL request :
 
   SELECT act_name, salary FROM Activity WHERE 
     emp_id = $anEmployee->{emp_id} AND
-    isActive = 'Y'
+    is_active = 'Y'
 
 If the role method is called without any parameters, and
 if that role was previously expanded (see L</"expand"> method), 
@@ -1118,11 +1188,13 @@ named C<insert_into_...> is also installed, that will
 create new objects of the associated class, taking care
 of the linking automatically :
 
-  $anEmployee->insert_into_activities({d_begin => $today, dpt_id  => $dpt});
+  $anEmployee->insert_into_activities({d_begin => $today, 
+                                       dpt_id  => $dpt});
 
 This is equivalent to
 
-  Activity->insert({d_begin => $today, dpt_id  => $dpt, 
+  Activity->insert({d_begin => $today, 
+                    dpt_id  => $dpt, 
                     emp_id  => $anEmployee->{emp_id}});
 
 =head4 Many-to-many associations
@@ -1141,11 +1213,11 @@ The linking table needs to be declared first :
 
   MySchema->Table(qw/link_table link_table prim_key1 prim_key2/);
 
-  MySchema->Association([qw/table1     role1  0..1  prim_key1/],
-                        [qw/link_table links    *   prim_key1/]);
+  MySchema->Association([qw/table1     role1  0..1/],
+                        [qw/link_table links    * /]);
 
-  MySchema->Association([qw/table2     role2  0..1  prim_key2/],
-                        [qw/link_table links    *   prim_key2/]);
+  MySchema->Association([qw/table2     role2  0..1/],
+                        [qw/link_table links    * /]);
 
 This describes a diagram like this :
 
@@ -1191,8 +1263,11 @@ Observe that C<roles2()> returns rows from a I<join>,
 so these rows will belong both to C<Table2> I<and> to 
 C<Link_Table>.
 
-Caveat: currently, many-to-many associations do not have an
-automatic C<insert_into_*> method.
+Many-to-many associations do not have an
+automatic C<insert_into_*> method : you must 
+explicitly insert into the link table.
+
+
 
 =head4 Following multiple associations
 
@@ -1215,7 +1290,6 @@ L</"selectFromRoles"> :
 from a given object, follow a list of roles to get information
 from associated tables.
 
-
 =item *
 
 L</"MethodFromRoles"> :
@@ -1225,6 +1299,67 @@ add a new method in a table, that will follow a list of roles
 
 =back
 
+
+
+=head3 Composition
+
+  MySchema->Composition([$class1, $role1, $multiplicity1, @columns1], 
+                        [$class2, $role2, $multiplicity2, @columns2]);
+
+Declares a composition between two tables, i.e an association with
+some additional semantics. In UML class diagrams, compositions are
+pictured with a black diamond on one side : this side will be called
+the I<composite> class, while the other side will be called the
+I<component> class. In C<DBIx::DataModel>, the diamond (the composite
+class) corresponds to the first arrayref argument, and the component
+class corresponds to the second arrayref argument, so the order of
+both arguments is important (while for associations the order makes no
+difference).
+
+The UML intended meaning of a composition is that objects of the
+component classes cannot exist outside of their composite class. Within
+C<DBIx::DataModel>, the additional semantics for compositions is to
+support cascaded insertions and deletions and auto-expansion :
+
+=over
+
+=item *
+
+the argument to an C<insert> may contain references to subrecords.
+The main record will be inserted in the composite class, and within
+the same operation, subrecords will be inserted into the 
+component classes, with foreign keys automatically filled with
+appropriate values.
+
+
+=item *
+
+the argument to a C<delete> may contain lists of component records to
+be deleted together with the main record of the composite class.
+
+=item *
+
+roles declared through a Composition may then be supplied
+to L<AutoExpand|/"AutoExpand"> so that the composite class
+can automatically fetch its component parts.
+
+
+=back
+
+See the documentation of L</"insert">, L</"delete"> and 
+L</"AutoExpand"> methods below for more details.
+
+Note that compositions add nothing to the semantics of update operations.
+
+Even though the arguments to a C<Composition> look exactly like for
+C<Association>, there are some more constraints : the maximum
+C<$multiplicity1> must be  1 (which is coherent with the notion of composition),
+and the maximum C<$multiplicity2> must be greater than 1 (because
+one-to-one compositions are not common and we don't know
+exactly how to implement cascaded inserts or deletes in such a case).
+Furthermore, a class cannot be component of several composite classes,
+unless the corresponding multiplicities are all C<0..1> instead of the
+usual C<1>.
 
 
 =head3 ViewFromRoles
@@ -1329,7 +1464,8 @@ on the primary key(s) of C<$obj>.  The returned function takes the
 same arguments as the L</select> method. So for example if 
 C<< $emp->{emp_id} == 987 >>, then
 
-  $emp->selectFromRoles(qw/activities department/)->({d_end => undef})
+  $emp->selectFromRoles(qw/activities department/)
+      ->(-where => {d_end => undef})
 
 will generate
 
@@ -1419,7 +1555,12 @@ handler :
 
 The second argument C<< $obj >> is the object from where 
 C<< $columnValue >> was taken -- most probably an instance 
-of a Table or View class. Other arguments C<< $columnName >> and
+of a Table or View class.  Use this if you need to read some contextual
+information, but avoid modifying C<< $obj >> : you would most
+probably get unexpected results, since the collection of 
+available columns may vary from one call to the other.
+
+Other arguments C<< $columnName >> and
 C<< $handlerName >> are obvious.
 
 Handler names B<fromDB> and B<toDB> have a special
@@ -1514,35 +1655,46 @@ for a specific Table class.
 
   Table->AutoExpand(qw/role1 role2 .../)
 
-Generates an C<autoExpand> method for the class, that 
+Generates an L</"autoExpand"> method for the class, that 
 will autoexpand on the roles listed (i.e. will call
 the appropriate method and store the result
 in a local slot within the object). 
 In other words, the object knows how to expand itself,
 fetching information from associated tables, in order
 to build a data tree in memory.
+Only roles declared as L<Compositions|/"Composition">
+may be auto-expanded.
 
-Be careful to avoid loops when specify autoexpands, otherwise
-you will generate an infinite tree and break your program.
-For example this would be problematic :
-
-
-  Employee->Autoexpand(qw/activities/);
-  Activity->Autoexpand(qw/employee/);
+Be careful about performance issues: when an object uses
+auto-expansion through a call to L</"autoExpand">, every auto-expanded
+role will generate an additional call to the database. This might
+be slow, especially if there are recursive auto-expansions;
+so in some cases it will be more appropriate to flatten the tree
+and use database joins, typically through the method
+L<selectFromRoles|/"selectFromRoles">.
 
 
 =head2 Schema runtime properties or parameterization methods
 
 =head3 dbh
 
-  Schema->dbh(DBI::connect(...) ); # set
-  my $dbh = Schema->dbh;           # get
+  my $dbh = DBI::connect(...);
+  Schema->dbh($dbh, %options);        # set
+
+  my $dbh             = Schema->dbh;  # get back just the dbh
+  my ($dbh, %options) = Schema->dbh;  # get back all
 
 Returns or sets the handle to a DBI database handle (see L<DBI>). 
 This handle is schema-specific.
 C<DBIx::DataModel> expects the handle to be opened with
 C<< RaiseError => 1 >>
 (see L</"Transactions and error handling">).
+
+In C<%options> you may pass any key-value pairs, and retrieve
+them later by calling C<dbh> in a list context. 
+C<DBIx::DataModel> will look in those options to try to find
+the "catalog" and "schema" arguments for C<DBI>'s 
+L<last_insert_id|DBI/last_insert_id>.
 
 
 
@@ -1579,9 +1731,14 @@ L<Log::Dispatch|Log::Dispatch>.
 
 There is also another way to see the SQL code :
 
-  my ($sql, @bind) = $myClassOrObj->$someSelectMethod(-columns  => \@columns,
-                                                      -where    => \%criteria,
-                                                      -resultAs => 'sql');
+  my $spy_sql = sub {my ($sql, @bind) = @_;
+                     print STDERR join "\n", $sql, @bind;
+                     return ($sql, @bind);};
+  
+  my $result = $myClassOrObj->$someSelectMethod(-columns  => \@columns,
+                                                -where    => \%criteria,
+                                                -postSQL  => $spy_sql);
+
 
 
 =head3 classData
@@ -1597,9 +1754,23 @@ you are doing.
 
 =head3 primKey
 
-  my @primKey = Table->primKey;
+  my @primKeyColumns = Table->primKey;
+  my @primKeyValues  = $obj->primKey;
 
-Returns the list of primary keys registered via C<< Schema->Table(..) >>.
+If called as a class method, returns the list of columns
+registered as primary key for that table (via C<< Schema->Table(..) >>).
+
+If called as an instance method, returns the list of values 
+in those columns.
+
+When called in scalar context and the primary key has only one column,
+returns that column (so you can call C<< $my k = $obj->primKey >>).
+
+=head3 componentRoles
+
+  my @roles = Table->componentRoles;
+
+Returns the list of roles declared through L</"Composition">.
 
 
 =head3 noUpdateColumns
@@ -1729,6 +1900,7 @@ it makes no sense to specify C<-where> in the options.
                                     -having   => \%criteria,
                                     -orderBy  => \@order,
                                     -for      => 'read only',
+                                    -postSQL  => \&postSQL_callback,
                                     -preExec  => \&preExec_callback,
                                     -postExec => \&preExec_callback,
                                     -resultAs => 'rows' || 'sth' || 
@@ -1775,7 +1947,12 @@ a plain SQL string like C<< "col1 IN (3, 5, 7, 11) OR col2 IS NOT NULL" >>.
 
 the third argument C<< \@order >> is a reference to a list 
 of columns for sorting. Again it can also be a plain SQL string
-like C<< "col1 DESC, col3, col2 DESC" >>.
+like C<< "col1 DESC, col3, col2 DESC" >>. Columns can 
+also be prefixed by '+' or '-' for indicating sorting directions,
+so for example C<< -orderBy => [qw/-col1 +col2 -col3/] >>
+will generate the SQL clause
+C<< ORDER BY col1 DESC, col2 ASC, col3 DESC >>.
+
 
 =back
 
@@ -1805,6 +1982,15 @@ are applied after grouping has occured.
 
 specifies an additional clause to be added at the end of the SQL statement,
 like C<< -for => 'read only' >> or C<< -for => 'update' >>.
+
+=item C<< -postSQL => \&postSQL_callback >>
+
+hook for specifying a callback function to be called on SQL code and
+bind values, before preparing the statement. It will be called as
+follows:
+
+  ($sql, @bind) = $args->{-postSQL}->($sql, @bind) if $args->{-postSQL};
+
 
 =item C<< -preExec => \&preExec_callback, -postExec => \&postExec_callback >>
 
@@ -1866,7 +2052,6 @@ together with the bind values.
 
 
 
-
 =head3 insert
 
   my @ids = MyTable->insert({col1 => $val1, col2 => $val2, ...}, {...});
@@ -1876,13 +2061,35 @@ and then inserts the new records into the database.
 Because of the handlers, this operation I<may modify the argument data>, 
 so it is not safe to access C<$val1>, C<$val2>, etc. after the call.
 
-The return value is the list of ids collected by calling
-DBI's C<last_insert_id()> after each record insertion.
-This may or may not be meaningful, depending on your database driver --- 
-see L<DBI's documentation|DBI/last_insert_id>. 
-B<Caveat>: currently we only pass C<undef> arguments to 
-C<last_insert_id()>, which is good enough for MySQL, but not
-for some other databases.
+Primary key column(s) should of course be present 
+in the supplied hashrefs, unless the the key is auto-generated.
+
+Each hashref will be blessed into the C<MyTable> class, and
+will be inserted through the internal L</"_singleInsert"> method.
+The default implementation of this method should be good enough
+for most common uses, but you may want to refine it in your
+table classes if you need some fancy handling on primary keys
+(like for example computing a random key and checking whether
+that key is free). 
+
+Scalar values returned by L</"_singleInsert"> are collected into
+an array, and then returned by C<insert()>; usually, these are
+the primary keys of the inserted records (if on one single column).
+In scalar context, the return value is the first id in the list above, which
+makes sense if you call insert() with a single argument.  If you call
+it with several arguments but from a scalar context, a warning is issued.
+
+If the table is a composite class (see L</"Composition"> above), then
+the component parts may be supplied within the hashref, with keys
+equal to the role names, and values given as arrayrefs of sub-hashrefs;
+then these will be inserted into the database, at the same time as the
+main record, with join values automatically filled in.  For example :
+
+   HR::Employee->insert({firstname  => "Johann Sebastian",  
+                         lastname   => "Bach",
+                         activities => [{d_begin  => '01.01.1695',
+        			         d_end    => '18.07.1750',
+	        		         dpt_code => 'CPT'}]});
 
 
 =head3 update
@@ -1954,13 +2161,22 @@ as a list of values. Note that C<< MyTable->delete(11, 22) >>
 does not mean "delete records with keys 11 and 22", but rather
 "delete record having primary key (11, 22)"; in other words,
 you only delete one record at a time. In order to 
-simultaneously delete several records, you must generate 
-the SQL yourself and go directly to the C<DBI> level.
+simultaneously delete several records according to some
+C<WHERE> criteria, you must generate 
+the SQL yourself and go directly to the L<DBI|DBI> level.
 
 When called as an instance method, the primary key is taken
 from object columns in memory. After the delete, 
 the memory for that object is destroyed.
-
+If the table is a composite class (see L</"Composition"> above), 
+and if the object contains references to lists of component parts, 
+then those will be recursively deleted together with the main 
+object (cascaded delete). However, if there are other component parts
+in the database, not referenced in the hashref, then those will 
+not be automatically deleted : in other words, the C<delete>
+method does not go by itself to the database to find all
+dependent composite parts (this is the job of the client code, or 
+sometimes of the database itself).
 
 
 =head3 applyColumnHandler
@@ -2053,7 +2269,7 @@ with arguments : C<< $obj->someRole('*') >>.
   $record->autoExpand( $recurse );
 
 Asks the object to expand itself with some objects in foreign tables.
-Does nothing by default, should be redefined in subclasses,
+Does nothing by default. Should be redefined in subclasses,
 most probably through the 
 L</AutoExpand> method (with capital 'A').
 If the optional argument C<$recurse> is true, then 
@@ -2063,8 +2279,7 @@ C<autoExpand> is recursively called on the expanded objects.
 
 =head3 blessFromDB
 
-  MyTable->blessFromDB($record);
-  MyView ->blessFromDB($record);
+  TableOrView->blessFromDB($record);
 
 Blesses C<< $record >> into an object of the class,
 and applies the C<fromDB> column handlers.
@@ -2146,7 +2361,7 @@ C<AutoCommit> should be set off for databases that support transactions;
 then atomic operations are enclosed in an C<eval>, followed by either
 C<< $dbh->commit() >> (in case of success) or 
 C<< $dbh->rollback() >> (in case of failure).
-The L<doTransaction()|/doTransaction> does all this for you 
+The L<doTransaction()|/doTransaction> method does all this for you 
 automatically.
 
 =head3 Calling DBI directly
@@ -2320,7 +2535,52 @@ or undefines a method if C<$coderef> is C<undef>.
 Raises an exception if the method name already
 exists in that package.
 
+=head3 _rawInsert
 
+  $obj->_rawInsert;
+
+Internal implementation for insertions into the database :
+takes keys and values within C<%$obj>, generates SQL for 
+insertion of those values into C<< $obj->dbTable >>,
+and executes it. Never called directly, but used by the protected method
+L</"_singleInsert>.
+
+=head2 "Protected" methods
+
+=head3 _singleInsert
+
+  $obj->_singleInsert;
+
+Implementation for inserting a record into the
+database; should never be called directly, but is used as 
+a backend by the L</"insert"> method. 
+
+This method receives an object blessed into some table class; the
+object hash should only contain keys and values to be directly
+inserted into the database, i.e. the C<noUpdateColumns> and all
+references to foreign objects should have been removed already (this
+is the job of the L</"insert"> method).  The method calls
+L</"_rawInsert"> for performing the database update, and then makes
+sure that the object contains its own key (if not supplied by the
+client code, for example when keys are auto-generated, then
+the key has to be .
+
+In the default implementation, this is done by calling DBI's
+L<last_insert_id()|DBI/last_insert_id> whenever necessary. This may or
+may not be meaningful, depending on your database driver.  The four
+arguments required by C<last_insert_id> are
+supplied as follows : catalog and schema names are taken from options
+given to C<< Schema->dbh(...) >> (or C<undef> otherwise), table and
+column names are taken from the object's database table and 
+primary key, as declared in C<< Schema->Table(...) >>.
+
+You may redeclare this method in your own table classes,
+for example if you need to compute a key, or construct it
+from other fields. 
+
+The scalar value returned by the method
+will in turn be returned by the L</"insert"> method; usually 
+this value if the primary key, if that key is on one single column.
 
 
 =head1 SEE ALSO
@@ -2355,19 +2615,22 @@ L<http://www.cpanforum.com/dist/DBIx-DataModel>.
   - 'validate' record handler (not only column handlers)
   - 'normalize' handler : for ex. transform empty string into null
   - walk through WHERE queries and apply 'toDB' handler (not obvious!)
-  - add the UML notions of Aggregation and Composition (would mean 
-    additional methods for adding and removing parts of an aggregate;
-    automatic deletion of composite parts)
   - decide what to do with multiple inheritance of role methods in Views;
     use NEXT ?
   - implement table aliases
-  - pass proper parameters to last_insert_id(..) in insert()
   - maybe it is not a good idea to modify data in place when 
     performing inserts or updates; should perhaps clone the arguments.
   - more extensive and more organized testing
   - optional caching for fetch() within lookup tables
-  - 
-
+  - add support for UPDATE/DELETE ... WHERE ...
+  - add PKEYS keyword in -columns, will be automatically replaced by 
+    names of primary key columns of the touched tables
+  - design API for easy dynamic association of objects without dealing 
+    with the keys
+  - remove spouse example from doc (because can't have same table twice in roles)
+  - syntax for column aliases : Column|col
+  - idem for tables
+  - support for bind parameters for blobs
 
 =head1 AUTHOR
 

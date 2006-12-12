@@ -1,5 +1,35 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.28 12.12.2006 CPAN release
+  - fixed bug in _rawInsert (was unblessing $self in case of exceptions)
+
+v0.27 14.11.2006
+  - added Table::componentRoles()
+  - primKey returns column names (class method) or values (instance method)
+  - restructured insert(), added _singleInsert and _rawInsert
+
+v0.26 12.11.2006
+  - default values for column names in Associations
+  - primKey returns list or scalar depending on wantarray
+  - added optional arguments to Schema->dbh() 
+  - fixed arguments to last_insert_id
+  - consistency checks on Compositions
+
+v0.25 09.11.2006
+  - more liberal parsing of multiplicities
+
+v0.24 08.11.2006
+  - insert() returns list or scalar depending on wantarray
+
+v0.23 07.11.2006
+  - added Composition() and cascaded insert/delete
+  - added support for prefixes +/- for -orderBy
+
+v0.22 14.09.2006
+  - added option -postSQL to select()
+  - Build.pl option to support old-style Makefile.PL
+  - ViewFromRoles creates views in $schema::View namespace
+
 v0.21 CPAN release 06.09.2006
   - check args for ViewFromRoles
   - check -resultAs value
@@ -17,11 +47,9 @@ v0.18, v0.19 - internal releases, major rewrite:
   - added -distinct, -groupBy and -having clauses
   - insert() returns DBI->last_insert_id()
 
-
 v0.17
   - Minor fixes in documentation
   - SqlDialect() is deprecated (replaced by arg in Schema() method)
-
 
 v0.16 CPAN release 26.01.2006
   - Associations now install an "insert_into_..." method

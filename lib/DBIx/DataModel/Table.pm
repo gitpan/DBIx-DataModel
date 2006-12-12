@@ -44,7 +44,14 @@ sub ColumnHandlers {
 sub AutoExpand {
   my ($class, @roles) = @_;
 
-  not ref($class) or croak "'ColumnHandlers' is a class method";
+  not ref($class) or croak "'AutoExpand' is a class method";
+
+  # check that we only AutoExpand on composition roles
+  my $joins = $class->schema->classData->{joins}{$class};
+  foreach my $role (@roles) {
+    $joins->{$role}{is_composition}
+      or croak "cannot AutoExpand on $role: not a composition";
+  }
 
   # closure to iterate on the roles
   my $autoExpand = sub {
@@ -79,7 +86,27 @@ sub noUpdateColumns {
 
 sub primKey {
   my $self = shift; 
-  @{$self->classData->{primKey}};
+
+  # get primKey columns
+  my @primKey = @{$self->classData->{primKey}};
+
+  # if called as instance method, get primKey values
+  @primKey = @{$self}{@primKey} if ref $self;
+
+  # choose what to return depending on context
+  return @primKey if wantarray;
+  not(@primKey > 1) 
+    or croak "cannot return a multi-column primary key in a scalar context";
+  return $primKey[0];
+}
+
+
+
+sub componentRoles {
+  my $self  = shift; 
+  my $class = ref($self) || $self;
+  my $join_info =  $class->schema->classData->{joins}{$class};
+  return grep {$join_info->{$_}{is_composition}} keys %$join_info;
 }
 
 
@@ -108,44 +135,113 @@ sub insert {
   not ref($class) or croak "insert() should be called as class method";
   @records        or croak "missing arguments to insert()";
 
-  my $dbh      = $class->schema->dbh or croak "Schema has no dbh";
-  my $sqlA     = $class->schema->classData->{sqlAbstr};
-  my $db_table = $class->db_table;
-  my @prim_keys;
+  my @ids;
 
   foreach my $record (@records) {
     bless $record, $class;
     $record->applyColumnHandler('toDB');
 
+    # remove subtrees and noUpdateColumns
     delete $record->{$_} foreach $class->noUpdateColumns;
+    my $subrecords = $record->_weed_out_subtrees;
 
-    # references to foreign objects should not be passed either (see 'expand')
-    foreach (keys %$record) {
-      delete $record->{$_} if ref($record->{$_});
-    }
+    # do the insertion
+    push @ids, $record->_singleInsert();
 
-    # now unbless $record into just a hashref and perform the insert
-
-    bless $record, 'HASH';
-    my ($sql, @bind) = $sqlA->insert($db_table, $record);
-    $class->_debug($sql . " / " . join(", ", @bind) );
-    my $sth = $dbh->prepare($sql);
-    $class->schema->classData->{lasth} = $sth if $class->schema->keepLasth;
-    $sth->execute(@bind);
-
-    # TODO : pass proper parameters to last_insert_id(). Code below
-    # works for MySQL, but not for Postgres.
-    push @prim_keys, $dbh->last_insert_id(undef, undef, undef, undef);
+    # insert the subtrees
+    $record->_insert_subtrees($subrecords);
   }
 
-  return @prim_keys;
+  # choose what to return according to context
+  return @ids if wantarray;             # list context
+  return      if not defined wantarray; # void context
+  carp "insert({...}, {...}, ..) called in scalar context" if @records > 1;
+  return $ids[0];
 }
 
 
+sub _singleInsert {
+  my ($self) = @_; # assumes %$self only contains scalars, and noUpdateColumns
+                   # have already been removed 
+  my $class  = ref $self or croak "_singleInsert called as class method";
+
+  $self->_rawInsert;
+
+  # make sure the object has its own key
+  my @primKeyCols = $class->primKey;
+  unless (@{$self}{@primKeyCols}) {
+    my $n_columns = @primKeyCols;
+    not ($n_columns > 1) 
+      or croak "cannot ask for last_insert_id: primary key in $class "
+             . "has $n_columns columns";
+
+   my ($dbh, %dbh_options) = $class->schema->dbh;
+
+   # fill the primary key from last_insert_id returned by the DBMS
+    $self->{$primKeyCols[0]}
+      = $dbh->last_insert_id($dbh_options{catalog}, 
+                             $dbh_options{schema}, 
+                             $class->db_table, 
+                             $primKeyCols[0]);
+  }
+
+  return $self->{$primKeyCols[0]};
+}
+
+
+sub _rawInsert {
+  my ($self) = @_; 
+  my $class  = ref $self or croak "_rawInsert called as class method";
+
+  # need to clone into a plain hash because that's what SQL::Abstract wants...
+  my %clone = %$self;
+
+  # perform the insertion
+  my ($sql, @bind) = $class->schema->classData->{sqlAbstr}
+                           ->insert($class->db_table, \%clone);
+  $class->_debug($sql . " / " . join(", ", @bind) );
+  my $sth = $class->schema->dbh->prepare($sql);
+  $class->schema->classData->{lasth} = $sth if $class->schema->keepLasth;
+  $sth->execute(@bind);
+}
+
+
+sub _weed_out_subtrees {
+  my ($self) = @_; 
+  my $class = ref $self;
+
+  my %is_component;
+  $is_component{$_} = 1 foreach $class->componentRoles;
+  my $subrecords = {};
+
+  while (my ($k, $v) = each %$self) {
+    if (ref $v) {
+      $is_component{$k} ? $subrecords->{$k} = $v 
+                        : carp "unexpected reference $k in record, deleted";
+      delete $self->{$k};
+    }
+  }
+  return $subrecords;
+}
+
+
+sub _insert_subtrees {
+  my ($self, $subrecords) = @_;
+  my $class = ref $self;
+  if (keys %$subrecords) {  # if there are component objects to insert
+    while (my ($role, $arrayref) = each %$subrecords) { # insert_into each role
+      UNIVERSAL::isa($arrayref, 'ARRAY')
+          or croak "Expected an arrayref for component role $role in $class";
+      my $meth = "insert_into_$role";
+      $self->$meth(@$arrayref);
+    }
+  }
+}
 
 sub update { _modifyData('update', @_); }
 
 sub delete { _modifyData('delete', @_); }
+
 
 sub hasInvalidColumns {
   my ($self) = @_;
@@ -158,23 +254,20 @@ sub hasInvalidColumns {
 }
 
 
-
-
-
 #------------------------------------------------------------
 # Internal utility functions
 #------------------------------------------------------------
 
 
-
-
-sub _modifyData { # called by methods 'update' and 'delete'
-  my $toDo     = shift;
-  my $self     = shift;
-  my $class    = ref($self) || $self;
-  my $db_table = $class->db_table;
-  my $dbh      = $class->schema->dbh or croak "Schema has no dbh";
-  my @primKey  = $self->primKey;
+sub _modifyData { # called by methods 'update' and 'delete'.
+                  # .. actually the factorization of code is not so 
+                  #    great, maybe should find another, better way
+  my $toDo        = shift;
+  my $self        = shift;
+  my $class       = ref($self) || $self;
+  my $db_table    = $class->db_table;
+  my $dbh         = $class->schema->dbh or croak "Schema has no dbh";
+  my @primKeyCols = $class->primKey;
 
   if (not ref($self)) {		# called as class method
     scalar(@_) or croak "not enough args for '$toDo' called as class method";
@@ -183,12 +276,20 @@ sub _modifyData { # called by methods 'update' and 'delete'
     $self = ref($_[-1]) ? {%{pop @_}} : {};
 
     # if primary key is given as a first argument, add it into the hashref
-    @{$self}{@primKey} = @_ if @_;
+    @{$self}{@primKeyCols} = @_ if @_;
 
     bless $self, $class;
   }
-  elsif (@_) {
-    croak "too many args for '$toDo' called as instance method";
+  else { # called as instance method
+    croak "too many args for '$toDo' called as instance method" if @_;
+
+    if ($toDo eq 'delete') {
+      # cascaded delete
+      foreach my $role ($class->componentRoles) {
+        my $component_items = $self->{$role} or next;
+        $_->delete foreach @$component_items;
+      }
+    }
   }
 
   # convert values into database format
@@ -196,7 +297,7 @@ sub _modifyData { # called by methods 'update' and 'delete'
 
   # move values of primary keys into a specific '%where' structure
   my %where;
-  foreach my $col ($self->primKey) {
+  foreach my $col (@primKeyCols) {
     $where{$col} = delete $self->{$col} or 
       croak "no value for primary column $col in table $class";
   }
@@ -228,7 +329,6 @@ sub _modifyData { # called by methods 'update' and 'delete'
   $schemaClassData->{lasth} = $sth if $keepLasth;
   $sth->execute(@bind);
 }
-
 
 
 1; # End of DBIx::DataModel::Table
@@ -272,6 +372,10 @@ implements
 =item L<fetch|DBIx::DataModel/fetch>
 
 =item L<insert|DBIx::DataModel/insert>
+
+=item L<_singleInsert|DBIx::DataModel/_singleInsert>
+
+=item L<_rawInsert|DBIx::DataModel/_rawInsert>
 
 =item L<update|DBIx::DataModel/update>
 

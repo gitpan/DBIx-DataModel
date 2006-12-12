@@ -88,7 +88,7 @@ sub selectSth {
 sub _isValidSelectArg {
   return grep {$_[0] eq $_} qw/-distinct -columns -where -orderBy 
 			       -groupBy  -having -for
-			       -resultAs -preExec -postExec/;
+			       -resultAs -postSQL -preExec -postExec/;
 }
 
 
@@ -126,6 +126,12 @@ sub select {
   exists($args->{-for}) or $args->{-for} = $self->selectImplicitlyFor;
 
 
+  # translate +/- prefixes to -orderBy args into SQL ASC/DESC
+  my $orderBy = $args->{-orderBy};
+  $orderBy = [$orderBy] unless ref $orderBy;
+  my %direction = ('+' => 'ASC', '-' => 'DESC');
+  $orderBy = [map {s/^([-+])(.*)/$2 $direction{$1}/} @$orderBy];
+
   # generate SQL
   my ($sql, @bind) = $sqlA->select($self->db_table, 
 				   $args->{-columns}, 
@@ -143,6 +149,8 @@ sub select {
   }
 
   $class->_debug($sql . " / " . join(", ", @bind));
+
+  ($sql, @bind) = $args->{-postSQL}->($sql, @bind) if $args->{-postSQL};
 
  SWITCH:
   for ($args->{-resultAs} || "rows") {
