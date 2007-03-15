@@ -25,16 +25,25 @@ my $sqlDialects = {
    innerJoin         => "%s INNER JOIN %s ON %s",
    leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
    joinAssociativity => "left",
+   columnAlias       => "%s AS %s",
  },
  MsAccess => {
    innerJoin         => "%s INNER JOIN (%s) ON %s",
    leftJoin          => "%s LEFT OUTER JOIN (%s) ON %s",
    joinAssociativity => "right",
+   columnAlias       => "%s AS %s",
  },
  BasisODBC => {
    innerJoin         => undef, 
    leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
    joinAssociativity => "left",
+   columnAlias       => "%s AS %s",
+ },
+ BasisJDBC => {
+   innerJoin         => "%s INNER JOIN %s ON %s",
+   leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
+   joinAssociativity => "left",
+   columnAlias       => "%s %s",
  },
 };
 
@@ -97,7 +106,7 @@ sub _SqlDialect {
     {@_};
 
   while (my ($k, $v) = each %$args) {
-    $k =~ /^(innerJoin|leftJoin|joinAssociativity)$/
+    $k =~ /^(innerJoin|leftJoin|joinAssociativity|columnAlias)$/
       or croak "invalid argument to SqlDialect: $k";
     $class->classData->{sqlDialect}{$k} = $v;
   }
@@ -402,15 +411,19 @@ sub debug {
 }
 
 
-sub noUpdateColumns {
+sub autoInsertColumns {
   my $class = shift; 
-  return @{$class->classData->{noUpdateColumns} || []};
+  return @{$class->classData->{autoInsertColumns} || []};
 }
-
 
 sub autoUpdateColumns {
   my $class = shift; 
   return @{$class->classData->{autoUpdateColumns} || []};
+}
+
+sub noUpdateColumns {
+  my $class = shift; 
+  return @{$class->classData->{noUpdateColumns} || []};
 }
 
 

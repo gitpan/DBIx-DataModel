@@ -41,6 +41,10 @@ my %classData; # {className => {classProperty => value, ...}}
   }
 }
 
+sub AutoInsertColumns {
+  my $self = shift; 
+  $self->classData->{autoInsertColumns} = \@_;
+}
 
 sub AutoUpdateColumns {
   my $self = shift; 
@@ -107,6 +111,8 @@ implements
 =item L<_setClassData|DBIx::DataModel/_setClassData>
 
 =item L<Autoload|DBIx::DataModel/Autoload>
+
+=item L<AutoInsertColumns|DBIx::DataModel/AutoInsertColumns>
 
 =item L<AutoUpdateColumns|DBIx::DataModel/AutoUpdateColumns>
 

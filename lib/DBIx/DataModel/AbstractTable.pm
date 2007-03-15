@@ -105,6 +105,19 @@ sub select {
 
   # complete arguments
   _addSelectCriteria($args, $classData->{where}) if $classData->{where};
+
+  # expand column aliases
+  if (UNIVERSAL::isa($args->{-columns}, 'ARRAY')) {
+    my $alias_syntax = $class->schema->classData->{sqlDialect}{columnAlias};
+    foreach my $col (@{$args->{-columns}}) {
+      my ($orig, $alias, $bug_alias) = split /\|/, $col;
+      next if not $alias;
+      croak "invalid column specification : $col" if $bug_alias;
+      $col = sprintf $alias_syntax, $orig, $alias;
+    }
+  }
+
+  # translate "-distinct" into "-columns"
   if ($args->{-distinct}) {
     not exists($args->{-columns}) or 
       croak "cannot specify both -distinct and -columns in select";

@@ -3,7 +3,7 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use constant N_DBI_MOCK_TESTS => 71;
+use constant N_DBI_MOCK_TESTS => 75;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
@@ -171,10 +171,15 @@ SKIP: {
 			  undef,
 			  [qw/d_birth/]);
 
-
   sqlLike('SELECT firstname AS fn, lastname AS ln '.
 	  'FROM t_employee ' .
 	  "ORDER BY d_birth", [], 'order_by select');
+
+
+  $lst = Employee->select(-columns => [qw/firstname|fn lastname|ln/]);
+  sqlLike('SELECT firstname AS fn, lastname AS ln '.
+	  'FROM t_employee', 
+          [], 'column aliases');
 
 
 
@@ -418,6 +423,18 @@ die_ok {$emp->emp_id};
 	  ['1950-01-01', 'toto', "someUser, someTime", 
 	   'Bodin De Boismortier', 999], 'autoUpdate');
 
+
+  MySchema->AutoInsertColumns( created_by => 
+    sub{"firstUser, firstTime"}
+  );
+
+  Employee->insert({firstname => "Felix",
+                    lastname  => "Mendelssohn"});
+
+  sqlLike('INSERT INTO t_employee (created_by, firstname, last_modif, lastname) ' .
+            'VALUES (?, ?, ?, ?)',
+	  ['firstUser, firstTime', 'Felix', 'someUser, someTime', 'Mendelssohn'],
+          'autoUpdate / insert');
 
 
   $emp = Employee->blessFromDB({emp_id => 999});

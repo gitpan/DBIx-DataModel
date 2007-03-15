@@ -69,12 +69,17 @@ sub AutoExpand {
 }
 
 
+sub autoInsertColumns {
+  my $self = shift; 
+  return $self->schema->autoInsertColumns,
+         @{$self->classData->{autoInsertColumns} || []};
+}
+
 sub autoUpdateColumns {
   my $self = shift; 
   return $self->schema->autoUpdateColumns,
          @{$self->classData->{autoUpdateColumns} || []};
 }
-
 
 sub noUpdateColumns {
   my $self = shift; 
@@ -195,6 +200,13 @@ sub _rawInsert {
 
   # need to clone into a plain hash because that's what SQL::Abstract wants...
   my %clone = %$self;
+
+  for my $method (qw/autoInsertColumns autoUpdateColumns/) {
+    my %autoColumns = $self->$method;
+    while (my ($col, $handler) = each %autoColumns) {
+      $clone{$col} = $handler->(\%clone, $class);
+    }
+  }
 
   # perform the insertion
   my ($sql, @bind) = $class->schema->classData->{sqlAbstr}

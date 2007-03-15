@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.29 14.03.2007
+  - AutoUpdateColumns was not called on insert -- fixed
+  - added AutoInsertColumns()
+  - added "longColumn|alias" syntax for -columns
+
 v0.28 12.12.2006 CPAN release
   - fixed bug in _rawInsert (was unblessing $self in case of exceptions)
 

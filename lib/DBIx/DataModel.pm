@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.28';
+our $VERSION = '0.29';
 
 
 sub Schema {	
@@ -109,9 +109,10 @@ Search employees whose name starts with 'D'
 
 idem, but we just want a subset of the columns, and order by age.
 
-  my $empl_F = Employee->select(-columns => [qw/firstname lastname d_birth/],
-                                -where   => {lastname => {-like => 'F%'}}
-			        -orderBy => 'd_birth');
+  my $empl_F 
+     = Employee->select(-columns => [qw/firstname lastname d_birth/],
+                        -where   => {lastname => {-like => 'F%'}},
+                        -orderBy => 'd_birth');
 
 Print some info from employees. Because of the
 'fromDB' handler associated with column type 'date', column 'd_birth'
@@ -943,9 +944,9 @@ L</dbh> method.
 
 SQL has no standard syntax for performing joins, so if your
 database wants a particular syntax you will need to declare it.
-Current builtin dialects are either C<'MsAccess'>, C<'BasisODBC'> or 
-C<'Default'> (contributions to enrich this list are welcome).
-Otherwise C<$dialect> can also be a hashref in which you
+Current builtin dialects are either C<'MsAccess'>, C<'BasisODBC'>,
+C<'BasisJDBC'> or C<'Default'> (contributions to enrich this list 
+are welcome). Otherwise C<$dialect> can also be a hashref in which you
 supply the following information :
 
 =over
@@ -966,6 +967,11 @@ Default is C<%s LEFT OUTER JOIN %s ON %s>.
 =item joinAssociativity
 
 either C<left> or C<right>
+
+=item columnAlias
+
+a string for generating column aliases. 
+Default is C<%s AS %s>.
 
 =back
 
@@ -1610,18 +1616,18 @@ C<< MySchema->Autoload(1) >> actually turns it on
 for all schemas.
 
 
-=head3 AutoUpdateColumns
+=head3 AutoInsertColumns
 
-  MySchema->AutoUpdateColumns( columnName1 => sub{...}, ... );
-  MyTable ->AutoUpdateColumns( columnName1 => sub{...}, ... );
+  MySchema->AutoInsertColumns( columnName1 => sub{...}, ... );
+  MyTable ->AutoInsertColumns( columnName1 => sub{...}, ... );
 
 Declares handler code that will automatically fill column names
-C<columnName1>, etc. at each update, either for a single table, or (if
+C<columnName1>, etc. at each insert, either for a single table, or (if
 declared at the Schema level), for every table. For example, each
-record could remember who did the last modification with something
+record could remember who created it and when with something
 like
 
-  MySchema->AutoUpdateColumns( last_modif => 
+  MySchema->AutoInsertColumns( created_by => 
     sub{$ENV{REMOTE_USER} . ", " . localtime}
   );
 
@@ -1633,6 +1639,18 @@ so that it can know something about its calling context.  In most
 cases, however, the handler will not need these parameters, because it just
 returns global information such as current user or current date/time.
 
+
+=head3 AutoUpdateColumns
+
+  MySchema->AutoUpdateColumns( columnName1 => sub{...}, ... );
+  MyTable ->AutoUpdateColumns( columnName1 => sub{...}, ... );
+
+Just like C<AutoInsertColumns>, but will be called automatically
+at each update B<and> each insert. This is typically used to 
+remember the author and/or date and time of the last modification
+of a record. If you use both C<AutoInsertColumns> and 
+C<AutoUpdateColumns>, make sure that the column names are not 
+the same.
 
 
 =head3 NoUpdateColumns
@@ -1919,12 +1937,20 @@ The API is mostly borrowed from L<SQL::Abstract|SQL::Abstract> :
 
 =item * 
 
-the first argument C<< \@columns >>  is a reference to a list 
+the first argument C<< \@columns >>  is a reference to an array
 of SQL column specifications (i.e. column names, 
 function or grouping operators, "AS" clauses, etc.).
-Actually, the argument can also be a string instead of 
+
+A '|' in a column is translated into an 'AS' clause, according
+to the current L<SQL dialect|"Schema">: this is convenient when
+using perl C<< qw/.../ >> operator for columns, as in
+
+  -columns => [ qw/table1.longColumn|t1lc table2.longColumn|t2lc/ ]
+
+The argument to C<-columns> can also be a string instead of 
 an arrayref, like for example
-C<< "c1 AS foobar, MAX(c2) AS m_c2, COUNT(c3) as n_c3" >>. 
+C<< "c1 AS foobar, MAX(c2) AS m_c2, COUNT(c3) AS n_c3" >>. 
+
 If omitted, C<< \@columns >> takes the default, which is
 usually '*', unless modified through L<DefaultColumns()|/DefaultColumns>.
 
