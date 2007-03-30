@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.30 29.03.2007
+  - fixed bug in Schema::dbh
+
 v0.29 14.03.2007
   - AutoUpdateColumns was not called on insert -- fixed
   - added AutoInsertColumns()

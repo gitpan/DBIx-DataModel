@@ -401,7 +401,7 @@ sub dbh {
     $classData->{dbh}         = $dbh;
     $classData->{dbh_options} = \%options;
   }
-  return wantarray ? ($classData->{dbh}, %{$classData->{dbh_options}})
+  return wantarray ? ($classData->{dbh}, %{$classData->{dbh_options} || {}})
                    : $classData->{dbh};
 }
 
