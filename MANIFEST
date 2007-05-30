@@ -15,4 +15,3 @@ t/00-load.t
 t/DBIx-DataModel.t
 t/MsAccess.t
 t/pod.t
-

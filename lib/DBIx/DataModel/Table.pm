@@ -324,7 +324,7 @@ sub _modifyData { # called by methods 'update' and 'delete'.
 
     my %autoUpdate = $self->autoUpdateColumns;
     while (my ($col, $handler) = each %autoUpdate) {
-      $self->{$col} = $handler->($self, $class);
+      $self->{$col} = $handler->($self, $class, \%where);
     }
   }
 

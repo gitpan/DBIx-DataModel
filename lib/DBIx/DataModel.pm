@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.30';
+our $VERSION = '0.31';
 
 
 sub Schema {	
@@ -1633,7 +1633,7 @@ like
 
 The handler code will be called as 
 
-  $handler->($record, $table)
+  $handler->(\%record, $table)
 
 so that it can know something about its calling context.  In most
 cases, however, the handler will not need these parameters, because it just
@@ -1652,6 +1652,13 @@ of a record. If you use both C<AutoInsertColumns> and
 C<AutoUpdateColumns>, make sure that the column names are not 
 the same.
 
+When doing an I<update> (i.e. not an insert), the
+handler code will be called as 
+
+  $handler->(\%record, $table, \%where)
+
+where C<%record> contains the columns to be updated and
+C<%where> contains the primary key (column name(s) and value(s)).
 
 =head3 NoUpdateColumns
 
