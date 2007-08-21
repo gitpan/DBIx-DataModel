@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.32 21.08.2007
+  - minor adaptation for perl 5.9 (because strict 'refs' is stricter!)
+
 v0.31 30.05.2007
   - additional parameter in handlers called by autoUpdateColumns
 

@@ -5,11 +5,11 @@ WriteMakefile
           'NAME' => 'DBIx::DataModel',
           'VERSION_FROM' => 'lib/DBIx/DataModel.pm',
           'PREREQ_PM' => {
-                           'Carp' => '0',
-                           'DBI' => '0',
-                           'Module::Build' => '0',
-                           'SQL::Abstract' => '0',
-                           'Test::More' => '0'
+                           'Carp' => 0,
+                           'DBI' => 0,
+                           'Module::Build' => 0,
+                           'SQL::Abstract' => 0,
+                           'Test::More' => 0
                          },
           'INSTALLDIRS' => 'site',
           'EXE_FILES' => [],

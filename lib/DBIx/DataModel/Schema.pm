@@ -518,9 +518,9 @@ sub _sqlJoins { # connect a sequence of joins according to SQL dialect
 
 sub _createPackage {
   my ($schema, $pckName, $isa_arrayref) = @_;
-  not defined(%{$pckName.'::'}) or croak "package $pckName is already defined";
-
   no strict 'refs';
+
+  not defined(%{$pckName.'::'}) or croak "package $pckName is already defined";
   *{$pckName."::ISA"} = $isa_arrayref;
   return $pckName;
 }
