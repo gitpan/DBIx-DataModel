@@ -60,20 +60,25 @@ sub _subclass { # this is the implementation of DBIx::DataModel->Schema(..)
              ? (dbh => $args[0]) # .. then old API (positional arg : dbh)
              : @args;            # .. otherwise, named args
 
-  my ($bad_param) = grep {$_ !~ /^(dbh|sqlDialect)$/} keys %params;
+  my ($bad_param) = grep {$_ !~ /^(dbh|sqlDialect|tableParent|viewParent)$/}
+                         keys %params;
   croak "Schema(): invalid parameter: $bad_param" if $bad_param;
 
   # record some schema-specific global variables 
   my $classData = {
-    sqlAbstr   => SQL::Abstract->new(),
-    columnType => {}, # {typeName => {handler1 => code1, ...}}
+    sqlAbstr        => SQL::Abstract->new(),
+    columnType      => {}, # {typeName => {handler1 => code1, ...}}
     noUpdateColumns => [],
-    debug      => undef,
+    debug           => undef,
   };
+  for my $key (qw/tableParent viewParent/) {
+    my $parent = $params{$key} or next;
+    ref $parent or $parent = [$parent];
+    $classData->{$key} = $parent;
+  }
 
   $class->_setClassData($pckName => $classData);
   $class->_createPackage($pckName => [$class]);
-
 
   $pckName->dbh($params{dbh}) if $params{dbh};
 
@@ -125,7 +130,9 @@ sub Table {
     primKey   => \@primKey,
   });
 
-  return $class->_createPackage($table => ['DBIx::DataModel::Table']);
+  my $isa = $class->classData->{tableParent}
+         || ['DBIx::DataModel::Table'];
+  return $class->_createPackage($table, $isa);
 }
 
 sub View {
@@ -140,8 +147,10 @@ sub View {
     parentTables => \@parentTables,
   });
 
-  my @isa = ('DBIx::DataModel::View', @parentTables);
-  return $class->_createPackage($view => \@isa);
+  my $isa = $class->classData->{viewParent}
+         || ['DBIx::DataModel::View'];
+  push @$isa, @parentTables;
+  return $class->_createPackage($view, $isa);
 }
 
 
@@ -291,7 +300,12 @@ sub ViewFromRoles {
   }
 
   my $viewName = join "", "${class}::AutoView::", $table, map(ucfirst, @roles);  
-  return $viewName if defined (%{$viewName.'::'}); # view was already generated
+
+  # 0) do nothing if view was already generated
+  {
+    no strict 'refs';
+    return $viewName if defined (%{$viewName.'::'});
+  }
 
   # 1) go through the roles and accumulate information 
 

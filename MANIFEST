@@ -14,4 +14,5 @@ README
 t/00-load.t
 t/DBIx-DataModel.t
 t/MsAccess.t
+t/ParentClasses.t
 t/pod.t

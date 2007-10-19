@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.32';
+our $VERSION = '0.33';
 
 
 sub Schema {	
@@ -975,12 +975,20 @@ Default is C<%s AS %s>.
 
 =back
 
+=item C<< tableParent => 'My::Parent::Class::For::Tables' >>
+
+Specifies a parent class from which table classes will inherit.
+The default is C<DBIx::DataModel::Table>.
+The argument may also be an arrayref of several parent class names.
+
+=item C<< viewParent => 'My::Parent::Class::For::Views' >>
+
+Specifies a parent class from which table classes will inherit.
+The default is C<DBIx::DataModel::View>.
+The argument may also be an arrayref of several parent class names.
+
 =back
 
-For backwards compatibility with the previous API, you can specify the dbh 
-as second argument, instead of a named option, i.e. 
-C<< Schema($schemaName, $dbh) >> instead of 
-C<< Schema($schemaName, dbh => $dbh) >>.
 
 
 =head2 Populating a schema
@@ -1482,9 +1490,9 @@ will generate
 
 =head3 MethodFromRoles
 
-  TableOrView->MethodFromRoles($meth_name => qw/role1 role2 .../);
+  $table->MethodFromRoles($meth_name => qw/role1 role2 .../);
 
-Inserts into the class a new method named C<$meth_name>,
+Inserts into the table class a new method named C<$meth_name>,
 that will automatically call L</"selectFromRoles"> and
 pass arguments to the resulting function.
 This is useful for joining several tables at once, so for
@@ -1725,18 +1733,18 @@ L<last_insert_id|DBI/last_insert_id>.
 
 =head3 schema
 
-  $schema = TableOrView->schema;
-  $schema = $myObj->schema;
+  $schema = $class->schema;
+  $schema = $object->schema;
 
-Returns the name of the schema class for the current object or current 
+Returns the name of the schema class for the given object or 
 Table or View class.
 
 
 
 =head3 db_table
 
-  $db_table = TableOrView->db_table;
-  $db_table = $obj->db_table;
+  $db_table = $class->db_table;
+  $db_table = $object->db_table;
 
 Returns the database table name registered via C<< Schema->Table(..) >> 
 or collection of joined tables registered via C<< Schema->View(..) >>.
@@ -1834,12 +1842,12 @@ Gets or sets a default value for the C<-for> argument to
 L<select()|/"select">. Here it is set 
 at the C<Schema> level, so it will be applied to all tables.
 
-  TableOrView->selectImplicitlyFor('read only');
-  TableOrView->selectImplicitlyFor('');         
+  $tableClass->selectImplicitlyFor('read only');
+  $viewClass->selectImplicitlyFor('');
 
 Same thing, but at a Table or View level.
 
-  my $string = $obj->selectImplicitlyFor;   
+  my $string = $object->selectImplicitlyFor;
 
 Retrieves whatever whas set in the table or in the schema.
 
@@ -1916,22 +1924,23 @@ it makes no sense to specify C<-where> in the options.
 
 =head3 select
 
-  my $records = TableOrView->select(\@columns, \%where, \@order);
+  $records = MyTable->select(\@columns, \%where, \@order);
+  $records = MyView->select(\@columns, \%where, \@order);
   
-  my $records = TableOrView->select(-columns  => \@columns, 
-                                    # OR : -distinct => \@columns,
-                                    -where    => \%where, 
-                                    -groupBy  => \@groupings,
-                                    -having   => \%criteria,
-                                    -orderBy  => \@order,
-                                    -for      => 'read only',
-                                    -postSQL  => \&postSQL_callback,
-                                    -preExec  => \&preExec_callback,
-                                    -postExec => \&preExec_callback,
-                                    -resultAs => 'rows' || 'sth' || 
-                                                 'sql'  || 'iterator');
+  $records = MyTable->select(-columns  => \@columns, 
+                             # OR : -distinct => \@columns,
+                             -where    => \%where, 
+                             -groupBy  => \@groupings,
+                             -having   => \%criteria,
+                             -orderBy  => \@order,
+                             -for      => 'read only',
+                             -postSQL  => \&postSQL_callback,
+                             -preExec  => \&preExec_callback,
+                             -postExec => \&preExec_callback,
+                             -resultAs => 'rows' || 'sth' || 
+                                          'sql'  || 'iterator');
   
-  my $wholeTable = Table->select();
+  $all_records = MyTable->select();
 
 Applies a SQL SELECT to the associated table (or view), and returns 
 a result as specified by the C<-resultAs> argument (see below).
@@ -2050,6 +2059,12 @@ specifies what kind of result will be produced. Possible result kinds are :
 The result will be a ref to an array of rows, blessed into objects of the 
 class. This is the default result kind. If there are no data rows, a ref
 to an empty list is returned.
+
+=item B<firstrow>
+
+The result will be just the first data row, blessed into an object of the 
+class. If there is no data, C<undef> is returned.
+
 
 =item B<iterator> 
 
@@ -2214,8 +2229,8 @@ sometimes of the database itself).
 
 =head3 applyColumnHandler
 
-  TableOrView->applyColumnHandler($handlerName, \@objects);
-  $myObject  ->applyColumnHandler($handlerName);
+  $class ->applyColumnHandler($handlerName, \@objects);
+  $object->applyColumnHandler($handlerName);
 
 Inspects the target object or list of objects; for every
 column that exists in the object, checks whether
@@ -2287,7 +2302,7 @@ This caching improves efficiency, but also introduces the risk
 of side-effects across your code : after 
 
   $obj->expand(someRole => (-columns => [qw/just some columns/],
-                            -where   => [someField => 'restriction']))
+                            -where   => {someField => 'restriction'}))
 
 further calls to C<< $obj->someRole() >> will just return
 a dataset restricted according to the above criteria, instead
@@ -2312,22 +2327,22 @@ C<autoExpand> is recursively called on the expanded objects.
 
 =head3 blessFromDB
 
-  TableOrView->blessFromDB($record);
+  $class->blessFromDB($record);
 
-Blesses C<< $record >> into an object of the class,
+Blesses C<< $record >> into an object of the table or view class,
 and applies the C<fromDB> column handlers.
 
 
 =head3 preselectWhere
 
-  my $meth = TableOrView->preselectWhere({col1 => $val1, ...}, $multiplicity);
+  my $meth = $class->preselectWhere({col1 => $val1, ...}, $multiplicity);
   
   # .. later
   my $result = $meth->(-where =>{otherCol => 'otherVal'}, -columns => \@cols);
 
 
 Returns a reference to a function that will select data from
-C<MyTable>, just like the C<select()> method, but where some
+C<$class>, just like the C<select()> method, but where some
 additional selection criteria are "preselected". The preselection
 criteria are specified in L<SQL::Abstract|SQL::Abstract> format. 
 This method is
@@ -2654,24 +2669,27 @@ L<http://www.cpanforum.com/dist/DBIx-DataModel>.
   - maybe it is not a good idea to modify data in place when 
     performing inserts or updates; should perhaps clone the arguments.
   - more extensive and more organized testing
-  - optional caching for fetch() within lookup tables
+  - optional caching for fetch() within lookup tables .. but beware of caching
+      if dbh changes
   - add support for UPDATE/DELETE ... WHERE ...
   - add PKEYS keyword in -columns, will be automatically replaced by 
     names of primary key columns of the touched tables
   - design API for easy dynamic association of objects without dealing 
     with the keys
   - remove spouse example from doc (because can't have same table twice in roles)
-  - syntax for column aliases : Column|col
-  - idem for tables
   - support for bind parameters for blobs
 
 =head1 AUTHOR
 
 Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
 
+=head1 ACKNOWLEDGEMENTS
+
+Thanks to Cedric Bouvier for bug fixes and improvements.
+
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006 by Laurent Dami.
+Copyright 2006, 2007 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 

@@ -226,7 +226,8 @@ sub _weed_out_subtrees {
   $is_component{$_} = 1 foreach $class->componentRoles;
   my $subrecords = {};
 
-  while (my ($k, $v) = each %$self) {
+  foreach my $k (keys %$self) {
+    my $v = $self->{$k};
     if (ref $v) {
       $is_component{$k} ? $subrecords->{$k} = $v 
                         : carp "unexpected reference $k in record, deleted";

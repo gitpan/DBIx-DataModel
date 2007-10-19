@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v0.33
+  - minor fix in Table.pm, don't delete a hash key from an each() loop
+  - Schema() : added options tableParent and viewParent
+  - select() : added option -resultAs => 'firstrow'
+
 v0.32 21.08.2007
   - minor adaptation for perl 5.9 (because strict 'refs' is stricter!)
 

@@ -188,6 +188,11 @@ sub select {
                              $class->blessFromDB($_) foreach @$records;
 			     return $records; };
 
+    /firstrow/i      and do {# fetch data records and bless them into objects
+                             my $record = $sth->fetchrow_hashref;
+                             $class->blessFromDB($record) if $record;
+			     return $record; };
+
     # otherwise
     croak "unknown -resultAs value: $_"; 
   }
