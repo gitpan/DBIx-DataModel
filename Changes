@@ -1,6 +1,13 @@
 Revision history for Perl extension DBIx::DataModel.
 
-v0.33
+v0.35 12.11.2007
+  - Schema::doTransaction(): support for nested transactions
+  - insert() : if component subtrees, the composite gets the prim. keys
+
+v0.34 30.10.2007
+  - minor change in Schema::doTransaction because rollback() problem in JDBC
+  
+v0.33 19.10.2007
   - minor fix in Table.pm, don't delete a hash key from an each() loop
   - Schema() : added options tableParent and viewParent
   - select() : added option -resultAs => 'firstrow'

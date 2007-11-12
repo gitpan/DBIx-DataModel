@@ -180,9 +180,9 @@ sub _singleInsert {
       or croak "cannot ask for last_insert_id: primary key in $class "
              . "has $n_columns columns";
 
-   my ($dbh, %dbh_options) = $class->schema->dbh;
+    my ($dbh, %dbh_options) = $class->schema->dbh;
 
-   # fill the primary key from last_insert_id returned by the DBMS
+    # fill the primary key from last_insert_id returned by the DBMS
     $self->{$primKeyCols[0]}
       = $dbh->last_insert_id($dbh_options{catalog}, 
                              $dbh_options{schema}, 
@@ -247,6 +247,7 @@ sub _insert_subtrees {
           or croak "Expected an arrayref for component role $role in $class";
       my $meth = "insert_into_$role";
       $self->$meth(@$arrayref);
+      $self->{$role} = $arrayref;
     }
   }
 }

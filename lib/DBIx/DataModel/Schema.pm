@@ -463,26 +463,42 @@ sub views {
 }
 
 
-
 sub doTransaction { 
   my ($class, $coderef) = @_;
 
   my $dbh = $class->dbh or croak "no database handle for transaction";
-  my $return_val;
 
-  $dbh->begin_work;
+  # how to call and how to return will depend on context
+  my $want = wantarray ? "array" : defined(wantarray) ? "scalar" : "void";
+  my ($return_scalar, @return_array);
+  my $call_in_context = {
+    array  => sub {@return_array  = $coderef->()},
+    scalar => sub {$return_scalar = $coderef->()},
+    void   => sub {                 $coderef->()},
+   }->{$want};
+  my $return_in_context = {
+    array  => sub {return @return_array },
+    scalar => sub {return $return_scalar},
+    void   => sub {return               },
+   }->{$want};
 
-  (eval { # try the transaction
-    $return_val = $coderef->(); 
-    $dbh->commit; 
-    1;
-    } and return $return_val)
-    or do { # the transaction failed
-      my $errstr = $@;
+  if (! $dbh->{AutoCommit}) { # if already within a transaction, just execute
+    $call_in_context->();
+  }
+  else {                      # else try to execute and commit
+    $dbh->begin_work;
+    eval { $call_in_context->(); $dbh->commit; 1};
+    my $errstr = $@;
+    if ($errstr) { # the transaction failed
       my $rollback_status = 'OK';
-      eval {$dbh->rollback} or $rollback_status = "FAILED $@";
+      eval {$dbh->rollback; 1} # "1" needed because some drivers (JDBC) do 
+                               # not return true upon rollback
+        or $rollback_status = "FAILED $@";
       croak "FAILED TRANSACTION: $errstr (rollback: $rollback_status)";
     };
+  }
+
+  return $return_in_context->();
 }
 
 

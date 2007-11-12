@@ -3,7 +3,7 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 
-use constant N_DBI_MOCK_TESTS => 75;
+use constant N_DBI_MOCK_TESTS => 97;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
@@ -108,36 +108,27 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 
 
 SKIP: {
-  my $dbh;
-  eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", N_DBI_MOCK_TESTS 
-    if $@ or not $dbh;
+  eval "use DBD::Mock 1.36; 1"
+    or skip "DBD::Mock 1.36 does not seem to be installed", N_DBI_MOCK_TESTS;
 
-
-  # DBD::Mock has an attribute holding a fake last_insert_id, but
-  # does not implement the method last_insert_id(). So we fill the gap...
-  sub DBD::Mock::db::last_insert_id {
-    my ( $dbh ) = @_;
-    return $dbh->{mock_last_insert_id};
-  }
+  my $dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1});
 
   # sqlLike : takes a list of SQL regex and bind params, and a test msg.
-  # Checks if those matche with the DBD::Mock history.
+  # Checks if those match with the DBD::Mock history.
 
   sub sqlLike { # closure on $dbh
     my $msg = pop @_;    
 
     for (my $hist_index = -(@_ / 2); $hist_index < 0; $hist_index++) {
-      my $sql  = quotemeta(shift);
-      my $bind = shift;
+      my ($sql, $bind)  = (quotemeta(shift), shift);
 
       $sql =~ s/(\\?\s)+/\\s+/gs;
       $sql =~ s/\\\(/\\(\\s*/g;
       $sql =~ s/\\\)/\\s*\\)/g;
       my $regex = qr/^\s*$sql\s*$/i;
       my $hist = $dbh->{mock_all_history}[$hist_index];
-      like($hist->statement, $regex, "$msg (SQL)");
-      is_deeply($hist->bound_params, $bind, "$msg (params)");
+      like($hist->statement, $regex, "$msg [$hist_index] (SQL)");
+      is_deeply($hist->bound_params, $bind, "$msg [$hist_index] (params)");
     }
     $dbh->{mock_clear_history} = 1;
   }
@@ -465,6 +456,44 @@ die_ok {$emp->emp_id};
 				post => "was called" }, 'fetch, pre/post callbacks');
 
 
+  # testing transactions 
+
+  my $ok_trans       = sub { return "scalar transaction OK"     };
+  my $ok_trans_array = sub { return qw/array transaction OK/    };
+  my $fail_trans     = sub { die "failed transaction"           };
+  my $nested_1       = sub { MySchema->doTransaction($ok_trans) };
+  my $nested_many    = sub {
+    my $r1 = MySchema->doTransaction($nested_1);
+    my @r2 = MySchema->doTransaction($ok_trans_array);
+    return ($r1, @r2);
+  };
+
+  is (MySchema->doTransaction($ok_trans), 
+      "scalar transaction OK",
+      "scalar transaction");
+  sqlLike('BEGIN WORK', [], 
+          'COMMIT',     [], "scalar transaction commit");
+
+
+  is_deeply ([MySchema->doTransaction($ok_trans_array)],
+             [qw/array transaction OK/],
+             "array transaction");
+  sqlLike('BEGIN WORK', [], 
+          'COMMIT',     [], "array transaction commit");
+
+  die_ok {MySchema->doTransaction($fail_trans)};
+  sqlLike('BEGIN WORK', [], 
+          'ROLLBACK',   [], "fail transaction rollback");
+
+  $dbh->do('FAKE SQL, HISTORY MARKER');
+  is_deeply ([MySchema->doTransaction($nested_many)],
+             ["scalar transaction OK", qw/array transaction OK/],
+             "nested transaction");
+  sqlLike('FAKE SQL, HISTORY MARKER', [],
+          'BEGIN WORK', [], 
+          'COMMIT',     [], "nested transaction commit");
+
+
 };
 
 
@@ -477,7 +506,6 @@ hasInvalidFields
 expand
 autoExpand
 MethodFromRoles
-
 document the tests !!
 
 

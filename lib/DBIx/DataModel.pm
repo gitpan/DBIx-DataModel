@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '0.33';
+our $VERSION = '0.35';
 
 
 sub Schema {	
@@ -1906,7 +1906,12 @@ rollback itself may also fail).
 
 Usually the coderef passed as argument will be a
 closure that may refer to variables local to the environment where
-it was created.
+the closure was created.
+
+Nested calls to C<doTransaction> are supported : only 
+the top-level call will actually initiate and then
+commit the transaction, while an exception at any level
+will abort and rollback the whole thing.
 
 =head3 fetch
 
