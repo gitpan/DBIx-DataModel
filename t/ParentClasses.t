@@ -22,25 +22,27 @@ use Test::More tests => 6;
 BEGIN {use_ok("DBIx::DataModel");}
 
 
-DBIx::DataModel->Schema('MySchema', tableParent => 'Foo::Parent::Table',
-                                    viewParent  => [qw/Foo::Parent::V1
-                                                       Foo::Parent::V2/]);
+DBIx::DataModel->Schema('HR', tableParent => 'Foo::Parent::Table',
+                              viewParent  => [qw/Foo::Parent::V1
+                                                 Foo::Parent::V2/]);
 
-MySchema->Table(Employee   => T_Employee   => qw/emp_id/);
-MySchema->Table(Department => T_Department => qw/dpt_id/);
-MySchema->Table(Activity   => T_Activity   => qw/act_id/);
+HR->Table(Employee   => T_Employee   => qw/emp_id/);
+HR->Table(Department => T_Department => qw/dpt_id/);
+HR->Table(Activity   => T_Activity   => qw/act_id/);
 
-MySchema->Composition([qw/Employee   employee   1 /],
-                      [qw/Activity   activities * /]);
-MySchema->Association([qw/Activity   activities * dpt_id/],
-                      [qw/Department department 1 dpt_id/]);
+HR->Composition([qw/Employee   employee   1 /],
+                [qw/Activity   activities * /]);
+HR->Association([qw/Activity   activities * dpt_id/],
+                [qw/Department department 1 dpt_id/]);
 
-ok(Employee->isa('Foo::Parent::Table'),     "isa table custom");
-ok(Employee->isa('DBIx::DataModel::Table'), "isa table base");
+ok(HR::Employee->isa('Foo::Parent::Table'),     "isa table custom");
+ok(HR::Employee->isa('DBIx::DataModel::Table'), "isa table base");
 
-my $view = MySchema->ViewFromRoles(qw/Employee activities department/);
+my $view = HR->join(qw/Employee activities department/);
 
 ok($view->isa('Foo::Parent::V1'),       "isa view custom 1");
 ok($view->isa('Foo::Parent::V2'),       "isa view custom 2");
 ok($view->isa('DBIx::DataModel::View'), "isa view base");
+
+
 

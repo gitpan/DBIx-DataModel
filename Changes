@@ -1,5 +1,59 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.02 23.09.2008 CPAN release
+
+v1.01
+  - added method Schema->statementClass
+  - bug fixes in Statement::_resolve_source and Statement::JDBC::execute
+  - added -resultAs => 'flat_array' | 'subquery'
+  - better error message when missing foreign keys in a $object->join(...)
+
+v1.0
+  MAJOR REVISION, see Doc/Delta_1.0.pod
+  - added fetch_cached() method
+  - fixed bug in select(..., -orderBy =>...)
+  - better error message if missing foreign key 
+  - corrected _addSelectCriteria algorithm for merging several %where structs
+  - new statement object
+  - new method rowCount
+  - AbstractTable renamed as Source
+  - schema name is automatically prepended in table and views
+
+  INCOMPATIBLE CHANGES
+  - totally removed deprecated methods selectSth, applyColumnHandlers, 
+    SqlDialect
+  - -resultAs => 'statement' now means 'DBIx::DataModel::Statement' 
+    (formerly was a synonym for 'sth'
+
+v0.42
+  - fix bug in Schema.pm (loading Cursor class)
+
+v0.41
+  - documentation: splitting into several parts and general reworking
+  - Schema() : added an option to supply a customized SQL::Abstract instance
+  - Cursor : forbids ->next(..) and ->all() on "fast cursors"
+  - "ViewFromRoles", "selectFromRoles" renamed as "join", "selectJoined"
+  - new method Schema->localizeState()
+
+v0.40
+  - added fast iterators, using DBI's bind_columns() and fetch() methods
+  - bug fix : fetch("") was returning the whole table!
+  - scrollable cursor for JDBC
+
+v0.39 08.02.2008
+  - "longColumn|alias" syntax for -columns no longer modifies original data
+
+v0.38
+  - bug fix Schema::FROM_THAW
+
+v0.37
+  - ->select(-fetch => $key)
+  - doTransaction : all commits at the end
+  - support for Storable::freeze/thaw
+
+v0.36
+  - Schema::doTransaction(): support for localizing the dbh
+
 v0.35 12.11.2007
   - Schema::doTransaction(): support for nested transactions
   - insert() : if component subtrees, the composite gets the prim. keys

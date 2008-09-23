@@ -15,7 +15,8 @@ my $builder = Module::Build->new(
 	'Module::Build' => 0,
     },
     recommends => {
-        'DBD::Mock'    => 0,
+        'DBD::Mock'                   => 0,
+        'Lingua::EN::Inflect::Number' => 0,
     },
     add_to_cleanup      => [ 'DBIx-DataModel-*' ],
     create_makefile_pl  => 'traditional',

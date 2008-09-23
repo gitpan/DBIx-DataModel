@@ -11,35 +11,35 @@ sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
 BEGIN {use_ok("DBIx::DataModel");}
 
-  BEGIN { DBIx::DataModel->Schema('MySchema', sqlDialect => 'MsAccess'); }
+  BEGIN { DBIx::DataModel->Schema('HR', sqlDialect => 'MsAccess'); }
   
   BEGIN {
-    MySchema->Table(Employee   => T_Employee   => qw/emp_id/);
-    MySchema->Table(Department => T_Department => qw/dpt_id/);
-    MySchema->Table(Activity   => T_Activity   => qw/act_id/);
+    HR->Table(Employee   => T_Employee   => qw/emp_id/);
+    HR->Table(Department => T_Department => qw/dpt_id/);
+    HR->Table(Activity   => T_Activity   => qw/act_id/);
   }
 
-  MySchema->Composition([qw/Employee   employee   1 /],
-                        [qw/Activity   activities * /]);
-  MySchema->Association([qw/Activity   activities * dpt_id/],
-			[qw/Department department 1 dpt_id/]);
+  HR->Composition([qw/Employee   employee   1 /],
+                  [qw/Activity   activities * /]);
+  HR->Association([qw/Activity   activities * dpt_id/],
+		  [qw/Department department 1 dpt_id/]);
 
-  MySchema->ColumnType(Date => 
+  HR->ColumnType(Date => 
      fromDB   => sub {$_[0] =~ s/(\d\d\d\d)-(\d\d)-(\d\d)/$3.$2.$1/},
      toDB     => sub {$_[0] =~ s/(\d\d)\.(\d\d)\.(\d\d\d\d)/$3-$2-$1/},
      validate => sub {$_[0] =~ m/(\d\d)\.(\d\d)\.(\d\d\d\d)/});;
 
-  Employee->ColumnType(Date => qw/d_birth/);
-  Activity->ColumnType(Date => qw/d_begin d_end/);
+  HR::Employee->ColumnType(Date => qw/d_birth/);
+  HR::Activity->ColumnType(Date => qw/d_begin d_end/);
 
-  MySchema->NoUpdateColumns(qw/d_modif user_id/);
-  Employee->NoUpdateColumns(qw/last_login/);
+  HR->NoUpdateColumns(qw/d_modif user_id/);
+  HR::Employee->NoUpdateColumns(qw/last_login/);
 
-  Employee->ColumnHandlers(lastname => normalizeName => sub {
+  HR::Employee->ColumnHandlers(lastname => normalizeName => sub {
 			    $_[0] =~ s/\w+/\u\L$&/g
 			  });
 
-  Employee->AutoExpand(qw/activities/);
+  HR::Employee->AutoExpand(qw/activities/);
 
 
 SKIP: {
@@ -63,13 +63,13 @@ SKIP: {
   }
 
 
-  MySchema->dbh($dbh);
+  HR->dbh($dbh);
 
-  my $emp = Employee->blessFromDB({emp_id => 999});
+  my $emp = HR::Employee->blessFromDB({emp_id => 999});
 
 
 
-  my $view = MySchema->ViewFromRoles(qw/Employee activities department/);
+  my $view = HR->join(qw/Employee activities department/);
 
   $view->select("lastname, dpt_name", {gender => 'F'});
   sqlLike('SELECT lastname, dpt_name ' .
@@ -77,10 +77,11 @@ SKIP: {
 	  'LEFT OUTER JOIN (t_department) ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id) ' .
 	  'ON t_employee.emp_id=t_activity.emp_id ' .		
-	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles (MsAccess)');
+	  'WHERE (gender = ?)', ['F'], 'join (MsAccess)');
 
 
-  $emp->selectFromRoles(qw/activities department/)->({gender => 'F'});
+  $emp->join(qw/activities department/)
+      ->select({gender => 'F'});
   sqlLike('SELECT * ' .
 	  'FROM t_activity ' .
 	  'INNER JOIN (t_department) ' .

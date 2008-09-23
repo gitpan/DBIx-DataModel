@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use Carp;
 
-our @CARP_NOT = qw/DBIx::DataModel::Schema DBIx::DataModel::AbstractTable
+our @CARP_NOT = qw/DBIx::DataModel::Schema DBIx::DataModel::Source
 		   DBIx::DataModel::Table  DBIx::DataModel::View   /;
 
 my %classData; # {className => {classProperty => value, ...}}
@@ -101,22 +101,23 @@ L<DBIx::DataModel::Table|DBIx::DataModel::Table> classes.
 
 =head1 METHODS
 
-Methods are documented in L<DBIx::DataModel|DBIx::DataModel>. This module
-implements 
+Methods are documented in 
+L<DBIx::DataModel::Doc::Reference|DBIx::DataModel::Doc::Reference>.
+This module implements
 
 =over
 
-=item L<classData|DBIx::DataModel/classData>
+=item L<classData|DBIx::DataModel::Doc::Reference/classData>
 
-=item L<_setClassData|DBIx::DataModel/_setClassData>
+=item L<_setClassData|DBIx::DataModel::Doc::Reference/_setClassData>
 
-=item L<Autoload|DBIx::DataModel/Autoload>
+=item L<Autoload|DBIx::DataModel::Doc::Reference/Autoload>
 
-=item L<AutoInsertColumns|DBIx::DataModel/AutoInsertColumns>
+=item L<AutoInsertColumns|DBIx::DataModel::Doc::Reference/AutoInsertColumns>
 
-=item L<AutoUpdateColumns|DBIx::DataModel/AutoUpdateColumns>
+=item L<AutoUpdateColumns|DBIx::DataModel::Doc::Reference/AutoUpdateColumns>
 
-=item L<NoUpdateColumns|DBIx::DataModel/NoUpdateColumns>
+=item L<NoUpdateColumns|DBIx::DataModel::Doc::Reference/NoUpdateColumns>
 
 =back
 

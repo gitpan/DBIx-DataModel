@@ -2,21 +2,27 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 use DBI;
+use Data::Dumper;
 
-use constant N_DBI_MOCK_TESTS => 97;
+use constant N_DBI_MOCK_TESTS => 150;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
 
+
+# die_ok : succeeds if the supplied coderef dies with an exception
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
 
 
-BEGIN {use_ok("DBIx::DataModel");}
+BEGIN {
+use_ok("DBIx::DataModel");}
 
-  BEGIN { DBIx::DataModel->Schema('MySchema'); }
+  BEGIN { DBIx::DataModel->Schema('HR'); } # Human Resources
 
-ok(MySchema->isa("DBIx::DataModel::Schema"), 'Schema defined');
+ok(HR->isa("DBIx::DataModel::Schema"), 'Schema defined');
+
+my ($lst, $emp, $emp2, $act);
 
 
 
@@ -24,15 +30,15 @@ ok(MySchema->isa("DBIx::DataModel::Schema"), 'Schema defined');
 die_ok {DBIx::DataModel->Schema('DBI');};
 
   BEGIN {
-    MySchema->Table(Employee   => T_Employee   => qw/emp_id/);
-    MySchema->Table(Department => T_Department => qw/dpt_id/);
-    MySchema->Table(Activity   => T_Activity   => qw/act_id/);
+    HR->Table(Employee   => T_Employee   => qw/emp_id/)
+      ->Table(Department => T_Department => qw/dpt_id/)
+      ->Table(Activity   => T_Activity   => qw/act_id/);
   }
 
-ok(Employee->isa("DBIx::DataModel::Table"), 'Table defined');
-ok(Employee->can("select"), 'select method defined');
+ok(HR::Employee->isa("DBIx::DataModel::Table"), 'Table defined');
+ok(HR::Employee->can("select"), 'select method defined');
 
-  package Department;
+  package HR::Department;
   sub currentEmployees {
     my $self = shift;
     my $currentAct = $self->activities({d_end => [{-is  => undef},
@@ -43,58 +49,57 @@ ok(Employee->can("select"), 'select method defined');
   package main;		# switch back to the 'main' package
 
 
-is_deeply([Employee->primKey], ['emp_id'], 'primKey');
+is_deeply([HR::Employee->primKey], ['emp_id'], 'primKey');
 
-die_ok {Employee->Table(Foo    => T_Foo => qw/foo_id/)};
-
-
+die_ok {HR::Employee->Table(Foo    => T_Foo => qw/foo_id/)};
 
 
-  MySchema->Composition([qw/Employee   employee   1 /],
+
+
+  HR->Composition([qw/Employee   employee   1 /],
+                        [qw/Activity   activities * /])
+          ->Association([qw/Department department 1 /],
                         [qw/Activity   activities * /]);
 
-  MySchema->Association([qw/Department department 1 /],
-                        [qw/Activity   activities * /]);
+ok(HR::Activity->can("employee"),   'Association 1');
+ok(HR::Employee->can("activities"), 'Association 2');
 
-ok(Activity->can("employee"),   'Association 1');
-ok(Employee->can("activities"), 'Association 2');
-
-  MySchema->View(MyView =>
+  HR->View(MyView =>
      "DISTINCT column1 AS c1, t2.column2 AS c2",
      "Table1 AS t1 LEFT OUTER JOIN Table2 AS t2 ON t1.fk=t2.pk",
      {c1 => 'foo', c2 => {-like => 'bar%'}},
      qw/Employee Activity/);
 
 
-ok(MyView->isa("Employee"), 'MyView ISA Employee'); 
-ok(MyView->isa("Activity"), 'MyView ISA Activity'); 
+ok(HR::MyView->isa("HR::Employee"), 'HR::MyView ISA HR::Employee'); 
+ok(HR::MyView->isa("HR::Activity"), 'HR::MyView ISA HR::Activity'); 
 
-ok(MyView->can("employee"), 'View inherits roles');
+ok(HR::MyView->can("employee"), 'View inherits roles');
 
-  MySchema->ColumnType(Date => 
+  HR->ColumnType(Date => 
      fromDB   => sub {$_[0] =~ s/(\d\d\d\d)-(\d\d)-(\d\d)/$3.$2.$1/},
      toDB     => sub {$_[0] =~ s/(\d\d)\.(\d\d)\.(\d\d\d\d)/$3-$2-$1/},
      validate => sub {$_[0] =~ m/(\d\d)\.(\d\d)\.(\d\d\d\d)/});;
 
-  Employee->ColumnType(Date => qw/d_birth/);
-  Activity->ColumnType(Date => qw/d_begin d_end/);
+  HR::Employee->ColumnType(Date => qw/d_birth/);
+  HR::Activity->ColumnType(Date => qw/d_begin d_end/);
 
-  MySchema->NoUpdateColumns(qw/d_modif user_id/);
-  Employee->NoUpdateColumns(qw/last_login/);
+  HR->NoUpdateColumns(qw/d_modif user_id/);
+  HR::Employee->NoUpdateColumns(qw/last_login/);
 
-is_deeply([Employee->noUpdateColumns], 
+is_deeply([HR::Employee->noUpdateColumns], 
 	  [qw/d_modif user_id last_login/], 'noUpdateColumns');
 
 
-  Employee->ColumnHandlers(lastname => normalizeName => sub {
+  HR::Employee->ColumnHandlers(lastname => normalizeName => sub {
 			    $_[0] =~ s/\w+/\u\L$&/g
 			  });
 
-  Employee->AutoExpand(qw/activities/);
+  HR::Employee->AutoExpand(qw/activities/);
 
-  my $emp = Employee->blessFromDB({firstname => 'Joseph',
-				   lastname  => 'BODIN DE BOISMORTIER',
-				   d_birth   => '1775-12-16'});
+  $emp = HR::Employee->blessFromDB({firstname => 'Joseph',
+                                lastname  => 'BODIN DE BOISMORTIER',
+                                d_birth   => '1775-12-16'});
   $emp->applyColumnHandler('normalizeName');
 
 is($emp->{d_birth}, '16.12.1775', 'fromDB handler');
@@ -102,8 +107,8 @@ is($emp->{lastname}, 'Bodin De Boismortier', 'ad hoc handler');
 
 
   # test self-referential assoc.
-  MySchema->Association([qw/Employee   spouse   0..1 emp_id/],
-			[qw/Employee   none     1    spouse_id/]);
+  HR->Association([qw/Employee   spouse   0..1 emp_id/],
+                  [qw/Employee   ---      1    spouse_id/]);
 
 
 
@@ -134,31 +139,31 @@ SKIP: {
   }
 
 
-  MySchema->dbh($dbh);
-  isa_ok(MySchema->dbh, 'DBI::db', 'dbh handle');
+  HR->dbh($dbh);
+  isa_ok(HR->dbh, 'DBI::db', 'dbh handle');
 
-  my $lst;
-  $lst = Employee->select;
+
+  $lst = HR::Employee->select;
   sqlLike('SELECT * FROM t_employee', [], 'empty select');
 
-  $lst = Employee->select(-for => 'read only');
+  $lst = HR::Employee->select(-for => 'read only');
   sqlLike('SELECT * FROM t_employee FOR READ ONLY', [], 'for read only');
 
 
-  $lst = Employee->select([qw/firstname lastname emp_id/],
+  $lst = HR::Employee->select([qw/firstname lastname emp_id/],
 			  {firstname => {-like => 'D%'}});
   sqlLike('SELECT firstname, lastname, emp_id '.
 	  'FROM t_employee ' .
 	  "WHERE (firstname LIKE ?)", ['D%'], 'like select');
 
 
-  $lst = Employee->select({firstname => {-like => 'D%'}});
+  $lst = HR::Employee->select({firstname => {-like => 'D%'}});
   sqlLike('SELECT * '.
 	  'FROM t_employee ' .
 	  "WHERE ( firstname LIKE ? )", ['D%'], 'implicit *');
 
 
-  $lst = Employee->select("firstname AS fn, lastname AS ln",
+  $lst = HR::Employee->select("firstname AS fn, lastname AS ln",
 			  undef,
 			  [qw/d_birth/]);
 
@@ -167,26 +172,30 @@ SKIP: {
 	  "ORDER BY d_birth", [], 'order_by select');
 
 
-  $lst = Employee->select(-columns => [qw/firstname|fn lastname|ln/]);
-  sqlLike('SELECT firstname AS fn, lastname AS ln '.
+  $dbh->{mock_clear_history} = 1;
+  $dbh->{mock_add_resultset} = [ [qw/ln  db/],
+                                 [qw/foo 2001-01-01/], 
+                                 [qw/bar 2002-02-02/] ];
+  $lst = HR::Employee->select(-columns => [qw/lastname|ln d_birth|db/]);
+  sqlLike('SELECT lastname AS ln, d_birth AS db '.
 	  'FROM t_employee', 
           [], 'column aliases');
+  is($lst->[0]{db}, "01.01.2001", "fromDB handler on column alias");
 
 
-
-  $lst = Employee->select(-distinct => "lastname, firstname");
+  $lst = HR::Employee->select(-distinct => "lastname, firstname");
 
   sqlLike('SELECT DISTINCT lastname, firstname '.
 	  'FROM t_employee' , [], 'distinct 1');
 
 
-  $lst = Employee->select(-distinct => [qw/lastname firstname/]);
+  $lst = HR::Employee->select(-distinct => [qw/lastname firstname/]);
 
   sqlLike('SELECT DISTINCT lastname, firstname '.
 	  'FROM t_employee' , [], 'distinct 2');
 
 
-  $lst = Employee->select(-columns => ['lastname', 
+  $lst = HR::Employee->select(-columns => ['lastname', 
 				       'COUNT(firstname) AS n_emp'],
 			  -groupBy => [qw/lastname/],
 			  -having  => [n_emp => {">=" => 2}],
@@ -201,29 +210,54 @@ SKIP: {
 
 
 
-  $lst = Employee->select(-orderBy => [qw/+col1 -col2 +col3/]);
+  $lst = HR::Employee->select(-orderBy => [qw/+col1 -col2 +col3/]);
   sqlLike('SELECT * FROM t_employee ORDER BY col1 ASC, col2 DESC, col3 ASC', 
           [], '-orderBy prefixes');
 
 
 
+  $emp2 = HR::Employee->fetch(123);
+  sqlLike('SELECT * FROM t_employee WHERE (emp_id = ?)', 
+          [123], 'fetch');
 
+  $emp2 = HR::Employee->select(-fetch => 123);
+  sqlLike('SELECT * FROM t_employee WHERE (emp_id = ?)', 
+          [123], 'select(-fetch)');
+
+  $emp2 = HR::Employee->fetch("");
+  sqlLike('SELECT * FROM t_employee WHERE (emp_id = ?)', 
+          [""], 'fetch (empty string)');
+
+
+  $emp2 = HR::Employee->fetch(undef);
+  sqlLike('SELECT * FROM t_employee WHERE (emp_id IS NULL)', 
+          [], 'fetch (undef)');
+
+
+  # successive calls to fetch_cached 
+  $dbh->{mock_clear_history} = 1;
+  $dbh->{mock_add_resultset} = [ [qw/foo bar/], [123, 456] ];
+  $emp2 = HR::Employee->fetch_cached(123);
+  is (@{$dbh->{mock_all_history}}, 1, "first fetch_cached : go to db");
+  my $emp3 = HR::Employee->fetch_cached(123);
+  is (@{$dbh->{mock_all_history}}, 1, "second fetch_cached : no db");
+  is_deeply($emp3, {foo=>123, bar=>456}, "fetch_cached result");
 
   $emp->{emp_id} = 999;
 
   # method call should break without autoload
 die_ok {$emp->emp_id};
   # now turn it on
-  MySchema->Autoload(1);
+  HR->Autoload(1);
 is($emp->emp_id, 999, 'autoload schema');
   # turn it off again
-  MySchema->Autoload(0);
+  HR->Autoload(0);
 die_ok {$emp->emp_id};
   # turn it on just for the Employee class
-  Employee->Autoload(1);
+  HR::Employee->Autoload(1);
 is($emp->emp_id, 999, 'autoload table');
   # turn it off again
-  Employee->Autoload(0);
+  HR::Employee->Autoload(0);
 die_ok {$emp->emp_id};
 
 
@@ -250,7 +284,9 @@ die_ok {$emp->emp_id};
 	    'activities where criteria');
 
   
-  $lst = $emp->activities("d_begin AS db, d_end AS de", {}, [qw/d_begin d_end/]);
+  $lst = $emp->activities("d_begin AS db, d_end AS de", 
+                          {}, 
+                          [qw/d_begin d_end/]);
 
   sqlLike('SELECT d_begin AS db, d_end AS de ' .
 	  'FROM t_activity ' .
@@ -258,10 +294,70 @@ die_ok {$emp->emp_id};
 	  'ORDER BY d_begin, d_end', [999], 
 	    'activities order by');
 
+  $act = $emp->activities(-fetch => 123);
+  sqlLike('SELECT * FROM t_activity WHERE (act_id = ? AND emp_id = ? )', 
+          [123, 999], 'activities(-fetch)');
 
-   $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
-   sqlLike('INSERT INTO t_activity (d_begin, d_end, emp_id) ' .
-	     'VALUES (?, ?, ?)', ['2000-01-01', '2000-02-02', 999],
+
+  # testing cached expanded values
+  $emp->{activities} = "foo";
+  is ($emp->activities, "foo", "cached expanded values");
+  delete $emp->{activities};
+
+
+  # unbless
+  my $emp2 = HR::Employee->blessFromDB({
+    emp_id => 999,
+    activities => [map {HR::Activity->blessFromDB({foo => $_})} 1..3],
+    spouse     => HR::Employee->blessFromDB({foo => 'spouse'}),
+  });
+  is_deeply(HR->unbless($emp2),
+            {emp_id => 999, 
+             spouse => {foo => 'spouse'},
+             activities => [{foo => 1}, {foo => 2}, {foo => 3}]}, 
+            "unbless");
+
+  # testing combination of where criteria
+  my $statement = HR::Employee->activities(-where => {foo => [3, 4]});
+  $act = $statement->bind($emp)
+                   ->select(-where => {foo => [4, 5]});
+
+  sqlLike('SELECT * FROM T_Activity '
+          .  'WHERE ( emp_id = ? AND ( ((     (foo = ?) OR (foo = ?) )) '
+          .                           'AND (( (foo = ?) OR (foo = ?) ))))',
+          [999, 3, 4, 4, 5], "combined where");
+
+  $statement = HR::Employee->activities(-where => [foo => "bar", bar => "foo"]);
+  $act = $statement->bind($emp)
+                   ->select(-where => [foobar => 123, barfoo => 456]);
+
+  sqlLike('SELECT * FROM T_Activity '
+          .  'WHERE ( (((      (( (foo = ?   ) OR (bar = ?   ))) '
+          .              'AND (( (foobar = ?) OR (barfoo = ?))) ))) '
+          .           'AND emp_id = ? )',
+          [qw/bar foo 123 456 999/], "combined where, arrayrefs");
+
+
+  # select -resultAs => 'flat_arrayref'
+  $dbh->{mock_clear_history} = 1;
+  $dbh->{mock_add_resultset} = [ [qw/col1 col2/],
+                                 [qw/foo1 foo2/], 
+                                 [qw/bar1 bar2/] ];
+  my $pairs = HR::Employee->select(-columns => [qw/col1 col2/],
+                                   -resultAs => 'flat_arrayref');
+  my %hash = @$pairs;
+
+  # TEST BELOW DOES NOT WORK because DBD::Mock does not implement
+  # bind_columns. So we put a stupid test instead
+  # is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'columns'");
+  is_deeply(\%hash, {'' => undef}, "resultAs => 'columns'");
+
+
+
+  # insertion 
+  $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
+  sqlLike('INSERT INTO t_activity (d_begin, d_end, emp_id) ' .
+            'VALUES (?, ?, ?)', ['2000-01-01', '2000-02-02', 999],
 	    'add_to_activities');
 
 
@@ -277,7 +373,7 @@ die_ok {$emp->emp_id};
                               dpt_code => 'Anna-Magdalena'}]};
 
 
-  my $emp_id = Employee->insert($tree);
+  my $emp_id = HR::Employee->insert($tree);
   my $sql_insert_activity = 'INSERT INTO t_activity (d_begin, d_end, '
                           . 'dpt_code, emp_id) VALUES (?, ?, ?, ?)';
 
@@ -291,15 +387,15 @@ die_ok {$emp->emp_id};
 
 
 
-  MyView->select({c3 => 22});
+  HR::MyView->select({c3 => 22});
 
   sqlLike('SELECT DISTINCT column1 AS c1, t2.column2 AS c2 ' .
 	  'FROM Table1 AS t1 LEFT OUTER JOIN Table2 AS t2 '.
 	  'ON t1.fk=t2.pk ' .
 	  'WHERE (c1 = ? AND c2 LIKE ? AND c3 = ?)',
-	     ['foo', 'bar%', 22], 'MyView');
+	     ['foo', 'bar%', 22], 'HR::MyView');
 
-  my $view = MySchema->ViewFromRoles(qw/Employee activities department/);
+  my $view = HR->join(qw/Employee activities department/);
   $view->select("lastname, dpt_name", {gender => 'F'});
 
   sqlLike('SELECT lastname, dpt_name ' .
@@ -307,10 +403,10 @@ die_ok {$emp->emp_id};
 	  'ON t_employee.emp_id=t_activity.emp_id ' .		
 	  'LEFT OUTER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
-	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles');
+	  'WHERE (gender = ?)', ['F'], 'join');
 
 
-  my $view2 = MySchema->ViewFromRoles(qw/Employee <=> activities => department/);
+  my $view2 = HR->join(qw/Employee <=> activities => department/);
   $view2->select("lastname, dpt_name", {gender => 'F'});
 
   sqlLike('SELECT lastname, dpt_name ' .
@@ -318,37 +414,125 @@ die_ok {$emp->emp_id};
 	  'ON t_employee.emp_id=t_activity.emp_id ' .		
 	  'LEFT OUTER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
-	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles with explicit roles');
+	  'WHERE (gender = ?)', ['F'], 'join with explicit roles');
 
 
 
 
-  my $view3 = MySchema->ViewFromRoles(qw/Activity employee department/);
+  my $view3 = HR->join(qw/Activity employee department/);
   $view3->select("lastname, dpt_name", {gender => 'F'});
 
   sqlLike('SELECT lastname, dpt_name ' .
 	  'FROM t_activity INNER JOIN t_employee ' .
-	  'ON t_activity.emp_id=t_employee.emp_id ' .		
+	  'ON t_activity.emp_id=t_employee.emp_id ' .
 	  'INNER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
-	  'WHERE (gender = ?)', ['F'], 'ViewFromRoles with indirect role');
+	  'WHERE (gender = ?)', ['F'], 'join with indirect role');
 
 
-  die_ok {$emp->selectFromRoles(qw/activities/)};
-  die_ok {$emp->selectFromRoles(qw/activities foo/)};
-  die_ok {$emp->selectFromRoles(qw/foo bar/)};
+  die_ok {$emp->join(qw/activities foo/)};
+  die_ok {$emp->join(qw/foo bar/)};
 
-  $emp->selectFromRoles(qw/activities department/)->({gender => 'F'});
+  $emp->join(qw/activities department/)
+      ->select({gender => 'F'});
 
   sqlLike('SELECT * ' .
 	  'FROM t_activity ' .
 	  'INNER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
 	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
-	  'selectFromRoles ');
+	  'join (instance method)');
+
+  # table aliases
+  HR->join(qw/Activity|act employee|emp department|dpt/)
+    ->select(-columns => [qw/lastname dpt_name/], 
+             -where   => {gender => 'F'});
+
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_activity AS act INNER JOIN t_employee AS emp ' .
+	  'ON act.emp_id=emp.emp_id ' .
+	  'INNER JOIN t_department AS dpt ' .
+	  'ON act.dpt_id=dpt.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 'table aliases');
+
+  # explicit sources
+  HR->join(qw/Activity Activity.employee Activity.department/)
+    ->select(-columns => [qw/lastname dpt_name/], 
+             -where   => {gender => 'F'});
+
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_activity INNER JOIN t_employee ' .
+	  'ON t_activity.emp_id=t_employee.emp_id ' .
+	  'INNER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 'explicit sources');
 
 
-  MySchema->Association([qw/Employee   employees   * activities employee/],
+  # both table aliases and explicit sources
+  HR->join(qw/Activity|act act.employee|emp act.department|dpt/)
+    ->select(-columns => [qw/lastname dpt_name/], 
+             -where   => {gender => 'F'});
+
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_activity AS act INNER JOIN t_employee AS emp ' .
+	  'ON act.emp_id=emp.emp_id ' .
+	  'INNER JOIN t_department AS dpt ' .
+	  'ON act.dpt_id=dpt.dpt_id ' .
+	  'WHERE (gender = ?)', ['F'], 
+          'both table aliases and explicit sources');
+
+
+  HR->join(qw/Department|dpt dpt.activities|act act.employee|emp/)
+    ->select(-columns => [qw/lastname dpt_name/], 
+             -where   => {gender => 'F'});
+  sqlLike('SELECT lastname, dpt_name ' .
+	  'FROM t_department AS dpt '.
+	  'LEFT OUTER JOIN t_activity AS act ' .
+	  'ON dpt.dpt_id=act.dpt_id ' .
+          'LEFT OUTER JOIN t_employee AS emp ' .
+	  'ON act.emp_id=emp.emp_id ' .
+	  'WHERE (gender = ?)', ['F'], 
+          'both table aliases and explicit sources, reversed');
+
+  # column types on table and column aliases
+  $dbh->{mock_clear_history} = 1;
+  $dbh->{mock_add_resultset} = [ [qw/ln  db/],
+                                 [qw/foo 2001-01-01/], 
+                                 [qw/bar 2002-02-02/] ];
+  $lst = HR->join(qw/Department|dpt dpt.activities|act act.employee|emp/)
+           ->select(-columns => [qw/emp.lastname|ln emp.d_birth|db/], 
+                    -where   => {gender => 'F'});
+  sqlLike('SELECT emp.lastname AS ln, emp.d_birth AS db ' .
+	  'FROM t_department AS dpt '.
+	  'LEFT OUTER JOIN t_activity AS act ' .
+	  'ON dpt.dpt_id=act.dpt_id ' .
+          'LEFT OUTER JOIN t_employee AS emp ' .
+	  'ON act.emp_id=emp.emp_id ' .
+	  'WHERE (gender = ?)', ['F'], 
+          'column types on table and column aliases (sql)');
+  is($lst->[0]{db}, "01.01.2001", "fromDB handler on table and column alias");
+
+
+
+
+  # stepwise statement prepare/execute
+  $statement = HR::Employee->join(qw/activities department/);
+  $statement->refine(-where => {gender => 'F'});
+  $statement->prepare;
+  die_ok {$statement->next}; # statement is not executed yet
+  my $row = $statement->execute($emp)->next;
+  sqlLike('SELECT * ' .
+	  'FROM t_activity ' .
+	  'INNER JOIN t_department ' .
+	  'ON t_activity.dpt_id=t_department.dpt_id ' .
+	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
+	  'statement prepare/execute');
+
+
+
+  # many-to-many association
+
+  HR->Association([qw/Employee   employees   * activities employee/],
 			[qw/Department departments * activities department/]);
 
   my $dpts = $emp->departments(-where =>{gender => 'F'});
@@ -360,7 +544,7 @@ die_ok {$emp->emp_id};
 	  'N-to-N Association ');
 
 
-  my $dpt = bless {dpt_id => 123}, 'Department';
+  my $dpt = bless {dpt_id => 123}, 'HR::Department';
   my $empls = $dpt->employees;
   sqlLike('SELECT * ' .
 	  'FROM t_activity ' .
@@ -372,7 +556,7 @@ die_ok {$emp->emp_id};
 
 
 
-  Employee->update(999, {firstname => 'toto', 
+  HR::Employee->update(999, {firstname => 'toto', 
 			 d_modif => '02.09.2005',
 			 d_birth => '01.01.1950',
 			 last_login => '01.09.2005'});
@@ -381,7 +565,7 @@ die_ok {$emp->emp_id};
 	  'WHERE (emp_id = ?)', ['1950-01-01', 'toto', 999], 'update');
 
 
-  Employee->update(     {firstname => 'toto', 
+  HR::Employee->update(     {firstname => 'toto', 
 			 d_modif => '02.09.2005',
 			 d_birth => '01.01.1950',
 			 last_login => '01.09.2005',
@@ -405,21 +589,21 @@ die_ok {$emp->emp_id};
 	  ['1950-01-01', 'toto', 'Bodin De Boismortier', 999], 'update3');
 
 
-  MySchema->AutoUpdateColumns( last_modif => 
+  HR->AutoUpdateColumns( last_modif => 
     sub{"someUser, someTime"}
   );
-  Employee->update(\%emp2);
+  HR::Employee->update(\%emp2);
   sqlLike('UPDATE t_employee SET d_birth = ?, firstname = ?, ' .
 	    'last_modif = ?, lastname = ? WHERE (emp_id = ?)', 
 	  ['1950-01-01', 'toto', "someUser, someTime", 
 	   'Bodin De Boismortier', 999], 'autoUpdate');
 
 
-  MySchema->AutoInsertColumns( created_by => 
+  HR->AutoInsertColumns( created_by => 
     sub{"firstUser, firstTime"}
   );
 
-  Employee->insert({firstname => "Felix",
+  HR::Employee->insert({firstname => "Felix",
                     lastname  => "Mendelssohn"});
 
   sqlLike('INSERT INTO t_employee (created_by, firstname, last_modif, lastname) ' .
@@ -428,14 +612,14 @@ die_ok {$emp->emp_id};
           'autoUpdate / insert');
 
 
-  $emp = Employee->blessFromDB({emp_id => 999});
+  $emp = HR::Employee->blessFromDB({emp_id => 999});
   $emp->delete;
   sqlLike('DELETE FROM t_employee '.
 	  'WHERE (emp_id = ?)', [999], 'delete');
 
 
-  $emp = Employee->blessFromDB({emp_id => 999, spouse_id => 888});
-  my $emp2 = $emp->spouse;
+  $emp = HR::Employee->blessFromDB({emp_id => 999, spouse_id => 888});
+  my $emp_spouse = $emp->spouse;
   sqlLike('SELECT * ' .
 	  'FROM t_employee ' .
 	  "WHERE ( emp_id = ? )", [888], 'spouse self-ref assoc.');
@@ -443,14 +627,14 @@ die_ok {$emp->emp_id};
 
   # testing -preExec / -postExec
   my %check_callbacks;
-  Employee->select(-where => {foo=>'bar'},
+  HR::Employee->select(-where => {foo=>'bar'},
 		   -preExec => sub {$check_callbacks{pre} = "was called"},
 		   -postExec => sub {$check_callbacks{post} = "was called"},);
   is_deeply(\%check_callbacks, {pre =>"was called", 
 				post => "was called" }, 'select, pre/post callbacks');
 
   %check_callbacks = ();
-  Employee->fetch(1234, {-preExec => sub {$check_callbacks{pre} = "was called"},
+  HR::Employee->fetch(1234, {-preExec => sub {$check_callbacks{pre} = "was called"},
 			 -postExec => sub {$check_callbacks{post} = "was called"}});
   is_deeply(\%check_callbacks, {pre =>"was called", 
 				post => "was called" }, 'fetch, pre/post callbacks');
@@ -461,32 +645,31 @@ die_ok {$emp->emp_id};
   my $ok_trans       = sub { return "scalar transaction OK"     };
   my $ok_trans_array = sub { return qw/array transaction OK/    };
   my $fail_trans     = sub { die "failed transaction"           };
-  my $nested_1       = sub { MySchema->doTransaction($ok_trans) };
+  my $nested_1       = sub { HR->doTransaction($ok_trans) };
   my $nested_many    = sub {
-    my $r1 = MySchema->doTransaction($nested_1);
-    my @r2 = MySchema->doTransaction($ok_trans_array);
+    my $r1 = HR->doTransaction($nested_1);
+    my @r2 = HR->doTransaction($ok_trans_array);
     return ($r1, @r2);
   };
 
-  is (MySchema->doTransaction($ok_trans), 
+  is (HR->doTransaction($ok_trans), 
       "scalar transaction OK",
       "scalar transaction");
   sqlLike('BEGIN WORK', [], 
           'COMMIT',     [], "scalar transaction commit");
 
-
-  is_deeply ([MySchema->doTransaction($ok_trans_array)],
+  is_deeply ([HR->doTransaction($ok_trans_array)],
              [qw/array transaction OK/],
              "array transaction");
   sqlLike('BEGIN WORK', [], 
           'COMMIT',     [], "array transaction commit");
 
-  die_ok {MySchema->doTransaction($fail_trans)};
+  die_ok {HR->doTransaction($fail_trans)};
   sqlLike('BEGIN WORK', [], 
           'ROLLBACK',   [], "fail transaction rollback");
 
   $dbh->do('FAKE SQL, HISTORY MARKER');
-  is_deeply ([MySchema->doTransaction($nested_many)],
+  is_deeply ([HR->doTransaction($nested_many)],
              ["scalar transaction OK", qw/array transaction OK/],
              "nested transaction");
   sqlLike('FAKE SQL, HISTORY MARKER', [],
@@ -494,7 +677,51 @@ die_ok {$emp->emp_id};
           'COMMIT',     [], "nested transaction commit");
 
 
-};
+  # nested transactions on two different databases
+  $dbh->{private_id} = "dbh1";
+  my $other_dbh = DBI->connect('DBI:Mock:', '', '', 
+                               {private_id => "dbh2", RaiseError => 1});
+
+  $emp_id = 66;
+  my $tell_dbh_id = sub {my $db_id = HR->dbh->{private_id};
+                         HR::Employee->update({emp_id => $emp_id++, name => $db_id});
+                         return "transaction on $db_id" };
+
+
+  my $nested_change_dbh = sub {
+    my $r1 = HR->doTransaction($tell_dbh_id);
+    my $r2 = HR->doTransaction($tell_dbh_id, $other_dbh);
+    my $r3 = HR->doTransaction($tell_dbh_id);
+    return ($r1, $r2, $r3);
+  };
+
+  $dbh      ->do('FAKE SQL, BEFORE TRANSACTION');
+  $other_dbh->do('FAKE SQL, BEFORE TRANSACTION');
+
+  is_deeply ([HR->doTransaction($nested_change_dbh)],
+             ["transaction on dbh1", 
+              "transaction on dbh2", 
+              "transaction on dbh1"],
+              "nested transaction, change dbh");
+
+
+  my $upd = 'UPDATE T_Employee SET last_modif = ?, name = ? WHERE ( emp_id = ? )';
+  my $last_modif = 'someUser, someTime';
+
+  sqlLike('FAKE SQL, BEFORE TRANSACTION', [],
+          'BEGIN WORK', [], 
+          $upd, [$last_modif, "dbh1", 66], 
+          $upd, [$last_modif, "dbh1", 68], 
+          'COMMIT',     [], "nested transaction on dbh1");
+
+
+  $dbh = $other_dbh;
+  sqlLike('FAKE SQL, BEFORE TRANSACTION', [],
+          'BEGIN WORK', [], 
+          $upd, [$last_modif, "dbh2", 67], 
+          'COMMIT',     [], "nested transaction on dbh2");
+
+} # END OF SKIP BLOCK
 
 
 

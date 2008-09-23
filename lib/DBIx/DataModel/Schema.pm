@@ -12,8 +12,10 @@ use base 'DBIx::DataModel::Base';
 use SQL::Abstract;
 use DBIx::DataModel::Table;
 use DBIx::DataModel::View;
+use POSIX        (); # INT_MAX
+use Scalar::Util (); # blessed
 
-our @CARP_NOT = qw/DBIx::DataModel         DBIx::DataModel::AbstractTable
+our @CARP_NOT = qw/DBIx::DataModel         DBIx::DataModel::Source
 		   DBIx::DataModel::Table  DBIx::DataModel::View         /;
 
 #----------------------------------------------------------------------
@@ -26,24 +28,28 @@ my $sqlDialects = {
    leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
    joinAssociativity => "left",
    columnAlias       => "%s AS %s",
+   tableAlias        => "%s AS %s",
  },
  MsAccess => {
    innerJoin         => "%s INNER JOIN (%s) ON %s",
    leftJoin          => "%s LEFT OUTER JOIN (%s) ON %s",
    joinAssociativity => "right",
    columnAlias       => "%s AS %s",
+   tableAlias        => "%s AS %s",
  },
  BasisODBC => {
    innerJoin         => undef, 
    leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
    joinAssociativity => "left",
    columnAlias       => "%s AS %s",
+   tableAlias        => "%s AS %s",
  },
  BasisJDBC => {
    innerJoin         => "%s INNER JOIN %s ON %s",
    leftJoin          => "%s LEFT OUTER JOIN %s ON %s",
    joinAssociativity => "left",
    columnAlias       => "%s %s",
+   tableAlias        => "%s AS %s",
  },
 };
 
@@ -60,20 +66,39 @@ sub _subclass { # this is the implementation of DBIx::DataModel->Schema(..)
              ? (dbh => $args[0]) # .. then old API (positional arg : dbh)
              : @args;            # .. otherwise, named args
 
-  my ($bad_param) = grep {$_ !~ /^(dbh|sqlDialect|tableParent|viewParent)$/}
-                         keys %params;
+  # backwards compatibility 
+  my $tmp;
+  $tmp = delete $params{cursorClass} 
+    and $params{statementClass} = $tmp;
+
+  # check validity of parameters
+  my $regex = qr/^(dbh | sqlDialect     | sqlAbstract    |
+                         tableParent    | viewParent     |
+                         statementClass | placeholderPrefix )$/x;
+  my ($bad_param) = grep {$_ !~ $regex} keys %params;
   croak "Schema(): invalid parameter: $bad_param" if $bad_param;
+
+  # check or build an instance of SQL::Abstract
+  my $sqlAbstr = $params{sqlAbstract} || SQL::Abstract->new;
+  $sqlAbstr->isa('SQL::Abstract')
+    or croak "arg. to sqlAbstract is not a SQL::Abstract instance";
 
   # record some schema-specific global variables 
   my $classData = {
-    sqlAbstr        => SQL::Abstract->new(),
-    columnType      => {}, # {typeName => {handler1 => code1, ...}}
-    noUpdateColumns => [],
-    debug           => undef,
+    sqlAbstr          => $sqlAbstr,
+    columnType        => {}, # {typeName => {handler1 => code1, ...}}
+    noUpdateColumns   => [],
+    debug             => undef,
+    placeholderPrefix => '?',
+    dbiPrepareMethod  => 'prepare',
   };
+  for my $key (qw/statementClass placeholderPrefix/) {
+    $classData->{$key} = $params{$key} if $params{$key};
+  }
   for my $key (qw/tableParent viewParent/) {
     my $parent = $params{$key} or next;
     ref $parent or $parent = [$parent];
+    $class->_ensureClassLoaded($_) foreach @$parent;
     $classData->{$key} = $parent;
   }
 
@@ -81,6 +106,9 @@ sub _subclass { # this is the implementation of DBIx::DataModel->Schema(..)
   $class->_createPackage($pckName => [$class]);
 
   $pckName->dbh($params{dbh}) if $params{dbh};
+
+  my $stmt_class = $params{statementClass} || 'DBIx::DataModel::Statement';
+  $pckName->statementClass($stmt_class);
 
   # _SqlDialect : needs some reshuffling of args, for backwards compatibility :
   # input : scalar or hashref; output : array
@@ -96,13 +124,6 @@ sub _subclass { # this is the implementation of DBIx::DataModel->Schema(..)
 
 
 
-
-sub SqlDialect {
-  carp "SqlDialect() is deprecated. Instead, pass dialect as argument to Schema() creation";
-  goto &_SqlDialect;
-}
-
-
 sub _SqlDialect {
   my $class = shift;
 
@@ -111,7 +132,7 @@ sub _SqlDialect {
     {@_};
 
   while (my ($k, $v) = each %$args) {
-    $k =~ /^(innerJoin|leftJoin|joinAssociativity|columnAlias)$/
+    $k =~ /^(innerJoin|leftJoin|joinAssociativity|columnAlias|tableAlias)$/
       or croak "invalid argument to SqlDialect: $k";
     $class->classData->{sqlDialect}{$k} = $v;
   }
@@ -120,6 +141,9 @@ sub _SqlDialect {
 
 sub Table {
   my ($class, $table, $db_table, @primKey) = @_;
+
+  # prepend schema name in table name, unless table already contains "::"
+  $table =~ /::/ or $table = $class . "::" . $table;
 
   push @{$class->classData->{tables}}, $table;
 
@@ -132,13 +156,26 @@ sub Table {
 
   my $isa = $class->classData->{tableParent}
          || ['DBIx::DataModel::Table'];
-  return $class->_createPackage($table, $isa);
+  $class->_createPackage($table, $isa);
+  return $class;
 }
 
 sub View {
-  my ($class, $view, $columns, $db_tables, $where, @parentTables) = @_;
+  my $class = shift;
+
+  # special API if called from STORABLE_thaw, see View.pm
+  my $FROM_THAW = $_[0] eq '__FROM_THAW' ? shift : undef;
+
+  # other arguments
+  my ($view, $columns, $db_tables, $where, @parentTables) = @_;
+
+  # prepend schema name in class names, unless they already contain "::"
+  $_ =~ /::/ or $_ = $class . "::" . $_ for $view, @parentTables;
+
+  # list this new View in Schema classData
   push @{$class->classData->{views}}, $view;
 
+  # setup classData for the new View
   $class->_setClassData($view => {
     schema    	 => $class,
     db_table  	 => $db_tables,
@@ -147,13 +184,22 @@ sub View {
     parentTables => \@parentTables,
   });
 
-  my $isa = $class->classData->{viewParent}
-         || ['DBIx::DataModel::View'];
+  # setup inheritance 
+  my $isa = $class->classData->{viewParent} || ['DBIx::DataModel::View'];
   push @$isa, @parentTables;
-  return $class->_createPackage($view, $isa);
+
+  # create or complete the package
+  if ($FROM_THAW) {
+    # Storable::thaw already created the package; just add @ISA to it
+    no strict 'refs';
+    *{$view."::ISA"} = $isa;
+  }
+  else {
+    # normal case: create a new package
+    $class->_createPackage($view, $isa);
+  }
+  return $class;
 }
-
-
 
 
 
@@ -162,6 +208,9 @@ sub Association {
 
   my ($table1, $role1, $multipl1, @cols1) = @$args1;
   my ($table2, $role2, $multipl2, @cols2) = @$args2;
+
+  # prepend schema name in table names, unless they already contain "::"
+  $_ =~ /::/ or $_ = $schema . "::" . $_  for $table1, $table2;
 
   my $implement_assoc = "_Assoc_normal";
 
@@ -180,7 +229,7 @@ sub Association {
                   last};
     /^FF/ and do {@cols1 && @cols2 
                          or croak "Association: columns must be explicit "
-                                . "with multiplicities $multipl1 / $multipl2";};
+                                . "with multiplicities $multipl1 / $multipl2"};
   }
   @cols1 == @cols2 or croak "Association: numbers of columns do not match";
 
@@ -188,6 +237,7 @@ sub Association {
 			    $table2, $multipl2, \@cols2);
   $schema->$implement_assoc($table2, $role2, $multipl2, \@cols2, 
 			    $table1, $multipl1, \@cols1);
+  return $schema;
 }
 
 # Normal Association implementation, when one side is of multiplicity one
@@ -195,53 +245,12 @@ sub _Assoc_normal {
   my ($schema, $table, $role, $multipl, $cols_ref, 
                $foreign_table, $foreign_multipl, $foreign_cols_ref) = @_;
 
-  return if not $role or $role =~ /^(0|""|''|none)$/; 
+  return if not $role or $role =~ /^(0|""|''|-+|none)$/; 
 
-  $table->isa('DBIx::DataModel::Table') or 
-    croak "Association : $table is not a Table class";
+  not ref $table and $table->isa('DBIx::DataModel::Table')
+    or croak "Association : $table is not a Table class";
 
-  # build select method as a closure, and install it into foreign table
-  my $select_meth = sub {
-    my $self = shift; 
-    ref($self) or croak "role $role cannot be called as class method";
-
-    # if called without args, and that role was previously expanded,
-    # then return the cached version
-    return $self->{$role} if $self->{$role} and not @_;
-
-    my ($missing_fk) = grep {not exists $self->{$_}} @$foreign_cols_ref;
-    croak "cannot follow role $role if foreign key $missing_fk is absent" 
-      if $missing_fk;
-    my %joinCols = ();
-    @joinCols{@$cols_ref} = @{$self}{@$foreign_cols_ref};
-    $table->preselectWhere(\%joinCols, $multipl)->(@_);
-  };
-  $schema->_defineMethod($foreign_table, $role, $select_meth);
-
-
-  if (_multipl_max($multipl) > 1) { # one to many
-
-    my $m_name = "insert_into_$role";
-
-    # build insert method as a closure, and install it into foreign table
-    my $insert_meth = sub {
-
-      my $self = shift;	# remaining @_ contains refs to records for insert()
-      ref($self) or croak "$m_name cannot be called as class method";
-
-      # add join information into records that will be inserted
-      foreach my $record (@_) {
-	not (grep {$record->{$_}} @$cols_ref) or
-	  croak "args to $m_name should not contain values in @$cols_ref";
-	@{$record}{@$cols_ref} = @{$self}{@$foreign_cols_ref};
-      }
-
-      return $table->insert(@_);
-    };
-    $schema->_defineMethod($foreign_table, $m_name, $insert_meth);
-  }
-
-  # record join parameters in schema->classData
+  # register join parameters in schema->classData
   my %where;
   @where{@$foreign_cols_ref} = @$cols_ref;
   $schema->classData->{joins}{$foreign_table}{$role} = {
@@ -249,6 +258,35 @@ sub _Assoc_normal {
     table        => $table,
     where        => \%where,
   };
+
+  # if one to many
+  if (_multipl_max($multipl) > 1) {
+
+    # install select method into foreign table (meth_name => role to follow)
+    $foreign_table->MethodFromJoin($role => $role);
+
+    # build insert method, and install it into foreign table
+    my $meth_name = "insert_into_$role";
+    $schema->_defineMethod($foreign_table, $meth_name, sub {
+      my $self = shift;	# remaining @_ contains refs to records for insert()
+      ref($self) or croak "$meth_name cannot be called as class method";
+
+      # add join information into records that will be inserted
+      foreach my $record (@_) {
+	not (grep {$record->{$_}} @$cols_ref) or
+	  croak "args to $meth_name should not contain values in @$cols_ref";
+	@{$record}{@$cols_ref} = @{$self}{@$foreign_cols_ref};
+      }
+
+      return $table->insert(@_);
+
+    });
+  }
+  else { # if one or zero to one
+    # install select method into foreign table 
+    $foreign_table->MethodFromJoin($role => $role, {-resultAs => "firstrow"});
+  }
+
 }
 
 
@@ -259,7 +297,7 @@ sub _Assoc_many_many {
 
   scalar(@$cols_ref) == 2 or 
     croak "improper number of roles in many-to-many association";
-  $foreign_table->MethodFromRoles($role => @$cols_ref);
+  $foreign_table->MethodFromJoin($role, @$cols_ref);
 }
 
 
@@ -273,6 +311,9 @@ sub Composition {
   _multipl_max($multipl2) > 1
     or croak "max multiplicity of second class in a composition must be > 1";
 
+  # prepend schema name in table names, unless they already contain "::"
+  $_ =~ /::/ or $_ = $schema . "::" . $_  for $table1, $table2;
+
   # check for conflicting compositions
   my $component_of = $table2->classData->{component_of} || {};
   while (my ($composite, $multipl) = each %$component_of) {
@@ -285,57 +326,114 @@ sub Composition {
   # implement the association
   $schema->Association($args1, $args2);
   $schema->classData->{joins}{$table1}{$role2}{is_composition} = 1;
+
+  return $schema;
 }
 
 
-sub ViewFromRoles {
+sub join {
   my ($class, $table, @roles) = @_;
+  my $classData  = $class->classData;
+  my $sqlDialect = $classData->{sqlDialect};
+  my @view_args  = ();
 
-  croak "ViewFromRoles: improper argument (ref)" 
-    if ref($table) or grep {ref $_} @roles;
 
-  foreach (@roles) {
-    s[^(INNER|<=>)$] [_INNER_];
-    s[^(LEFT|=>)$]   [_LEFT_];
+  # special API if called from STORABLE_thaw, see View.pm
+  my $FROM_THAW = $table eq '__FROM_THAW';
+  if ($FROM_THAW) {
+    my $all_roles = shift @roles;
+    $all_roles =~ s/\.pm$//;
+    ($table, @roles) = split /(_(?:INNER|LEFT|JOIN)_)/, $all_roles;
+    $table =~ s[/][::]g;
+    push @view_args, '__FROM_THAW';
   }
 
-  my $viewName = join "", "${class}::AutoView::", $table, map(ucfirst, @roles);  
+  # check arguments
+  @roles                             or croak "join: not enough arguments";
+  not grep {ref $_} ($table, @roles) or croak "join: improper argument (ref)";
+
+  # prepend schema name in table name, unless table already contains "::"
+  $table =~ /::/ or $table = $class . "::" . $table;
+
+  # alias syntax : canonicalize "|" into "_ALIAS_"
+  $table =~ s/\|/_ALIAS_/;
+
+  # transform into canonical representation of joins
+  my @tmp;
+  my $join;
+  foreach (@roles) {
+    # join connector
+    /^(INNER|<=>)$/        and do {$join = "_INNER_"; next};
+    /^(LEFT|=>)$/          and do {$join = "_LEFT_";  next};
+    /^_(INNER|LEFT|JOIN)_/ and do {$join = $_;        next};
+    # otherwise, role name
+    my $role = $_;
+    $role =~ s/\./_DOT_/;
+    $role =~ s/\|/_ALIAS_/;
+    push @tmp, ($join || "_JOIN_"), $role;
+    undef $join;
+  }
+  @roles = @tmp;
+
+  my $viewName = join "", "${class}::AutoView::", $table, @roles;
 
   # 0) do nothing if view was already generated
   {
     no strict 'refs';
-    return $viewName if defined (%{$viewName.'::'});
+    return $viewName if %{$viewName.'::'} and not $FROM_THAW;
   }
 
   # 1) go through the roles and accumulate information 
 
-  my @parentTables = ($table);
+  # extract table alias
+  my $table_alias;
+  $table =~ s/_ALIAS_(.+)$// and $table_alias = $1;
+  my $source_info = {table => $table, alias => $table_alias};
+
+  my $sql_table = _tableAlias($sqlDialect, $source_info);
+
+  my ($table_shortname) = ($table =~ /^.*::(.+)$/);
+  my @parentTables  = ($table);
+  my %sources;     $sources{$table_alias || $table_shortname} = $source_info;
+  my %aliases;     $aliases{$table_alias || $table->db_table} = $source_info; 
+  my @seenSources = ($source_info);
+
   my @innerJoins;
   my @leftJoins;
-  my $joinInto = \@innerJoins; # initially; might change later to \@leftJoins
-
-#  my $curTable = $table;
- 
-  my @seenTables = ($table);
-
-
+  my $joinInto = \@innerJoins; # initially
   my $forcedJoin;
 
  ROLE:
-  foreach my $role (@roles) {
+  foreach (@roles) {
 
-    for ($role) {
-      /^_INNER_$/ and do {$forcedJoin = \@innerJoins; next ROLE;};
-      /^_LEFT_$/  and do {$forcedJoin = \@leftJoins;  next ROLE;};
-    }
+    # skip pseudo-roles (join indicators)
+    /^_INNER_$/ and do {$forcedJoin = \@innerJoins; next ROLE};
+    /^_LEFT_$/  and do {$forcedJoin = \@leftJoins;  next ROLE};
+    /^_JOIN_$/  and do {                            next ROLE};
 
-    my ($curTable, $joinData);
-    foreach (@seenTables) {
-      $curTable = $_;
-      $joinData = $class->classData->{joins}{$curTable}{$role};
-      last if $joinData;
+    # decompose  parts of role
+    my ($source, $role, $alias) = /^(?:(.+?)(?:_DOT_))?    # $1: optional src
+                                    (.+?)                  # $2: role
+                                    (?:(?:_ALIAS_)(.+))?$  # $3: optional alias
+                                  /x
+     or croak "join: incorrect role: $_";
+
+    # build join information
+    my $joinData;
+    if ($source) {
+      $source_info = $sources{$source} 
+        or croak "join: unknown source: $source in $_";
+      $joinData = $classData->{joins}{$source_info->{table}}{$role};
     }
-    $joinData or croak "ViewFromRoles: role $role not found";
+    else {
+    SEEN_TABLE:
+      foreach my $seenSource (@seenSources) {
+        $source_info = $seenSource;
+        $joinData = $classData->{joins}{$source_info->{table}}{$role};
+        last SEEN_TABLE if $joinData;
+      }
+    }
+    $joinData or croak "join: role $_ not found";
 
     if ($forcedJoin) { 
       $joinInto = $forcedJoin;
@@ -346,60 +444,85 @@ sub ViewFromRoles {
       $joinInto = \@leftJoins;
     }
 
+    # build SQL join syntax
     my $nextTable = $joinData->{table};
-    unshift @seenTables, $nextTable;
+    my $where        = $joinData->{where};
+    my $dbTableLeft  =  $source_info->{alias} 
+                     || $source_info->{table}->db_table;
+    my $dbTableRight =  $alias
+                     || $nextTable->db_table;
+    my @criteria     = map {"$dbTableLeft.$_=$dbTableRight.$where->{$_}"} 
+                           keys %$where;
 
-    my $where = $joinData->{where};
-    my $dbTableLeft  = $curTable ->db_table;
-    my $dbTableRight = $nextTable->db_table;
-    my @criteria = map {"$dbTableLeft.$_=$dbTableRight.$where->{$_}"} 
-                       keys %$where;
-    push @$joinInto, [$nextTable->db_table => join(" AND ", @criteria)];
+    # keep track of this new source in various structures
+    my $new_info =  {
+      table    => $nextTable,
+      cond     => join(" AND ", @criteria),
+      alias    => $alias,
+    };
+    push @$joinInto, $new_info;
+    unshift @seenSources, $new_info;
+    $sources{$alias || $role} = $new_info;
+    $aliases{$dbTableRight}   = $new_info;
+
+    # set table as a parent for the view
     push @parentTables, $nextTable;
-  }
+
+  } # end foreach (@roles)
 
   # 2) build SQL, following the joins (first inner joins, then left joins)
 
-  my $sqlDialect = $class->classData->{sqlDialect};
-  my $where = {};
-  my $sql = "";
+  # TODO: DROP THIS STUFF about reordering inner/left joins.
+  # It only makes sense if NOT USING join syntax 
+  # (i.e. FROM t1, t2, ... WHERE $cond1 AND ...)
 
+  my $where      = {};
+  my $sql        = "";
+
+  # deal with inner joins
   if (not @innerJoins) {
-    $sql = $table->db_table;
-  } elsif ($sqlDialect->{innerJoin}) {
-    $sql = _sqlJoins($table->db_table, 
-		     \@innerJoins, 
-		     $sqlDialect->{innerJoin},
-		     $sqlDialect->{joinAssociativity});
-  } else {
-    $sql = join ", ", $table->db_table, map {$_->[0]} @innerJoins;
-    $where = join " AND ", map {$_->[1]} @innerJoins;
+    $sql = $sql_table;
   }
-  
-  $sql = _sqlJoins($sql,
-		   \@leftJoins, 
-		   $sqlDialect->{leftJoin},
-		   $sqlDialect->{joinAssociativity}) if @leftJoins;
+  elsif ($sqlDialect->{innerJoin}) {
+    $sql = _sqlJoins($sql_table, \@innerJoins, $sqlDialect, "innerJoin");
+  }
+  else {
+    my @db_tables = map {_tableAlias($sqlDialect, $_)} @innerJoins;
+    $sql = join ", ", $sql_table, @db_tables;
+    $where = join " AND ", map {$_->{cond}} @innerJoins;
+  }
+
+  # deal with left joins
+  $sql = _sqlJoins($sql, \@leftJoins, $sqlDialect, "leftJoin") if @leftJoins;
 
   # 3) install the View
 
-  return $class->View($viewName, '*', $sql, $where, @parentTables);
+  push @view_args, $viewName, '*', $sql, $where, @parentTables;
+  $class->View(@view_args);
+
+  # add alias information
+  $viewName->classData->{tableAliases} = \%aliases;
+
+  return $viewName;
 }
 
-
+# backwards compatibility : "join" was previously called "ViewFromRoles"
+*ViewFromRoles = \&join;
 
 
 sub ColumnType {
   my ($class, $typeName, @args) = @_;
 
   $class->classData->{columnHandlers}{$typeName} = {@args};
+  return $class;
 }
 
 
 
-sub Autoload { # forward to AbstractTable so that Tables and Views inherit it
+sub Autoload { # forward to Source so that Tables and Views inherit it
   my ($class, $toggle) = @_;
-  DBIx::DataModel::AbstractTable->Autoload($toggle);
+  DBIx::DataModel::Source->Autoload($toggle);
+  return $class;
 }
 
 
@@ -408,16 +531,47 @@ sub Autoload { # forward to AbstractTable so that Tables and Views inherit it
 #----------------------------------------------------------------------
 
 sub dbh {
-  my ($class, $dbh, %options) = @_;
+  my ($class, $dbh, %dbh_options) = @_;
   my $classData = $class->classData;
   if ($dbh) {
-    $dbh->{RaiseError} or croak "arg to dbh(..) must have RaiseError=1";
-    $classData->{dbh}         = $dbh;
-    $classData->{dbh_options} = \%options;
+    # forbid change of dbh while doing a transaction
+    not $classData->{dbh} or $classData->{dbh}->{AutoCommit}
+      or croak "cannot change dbh(..) while in a transaction";
+
+    # store the dbh
+    $classData->{dbh}         = $class->_check_valid_dbh($dbh);
+    $classData->{dbh_options} = \%dbh_options;
   }
   return wantarray ? ($classData->{dbh}, %{$classData->{dbh_options} || {}})
                    : $classData->{dbh};
 }
+
+
+sub _check_valid_dbh {
+  my ($class, $dbh) = @_;
+
+  $dbh and $dbh->isa('DBI::db')
+    or croak "invalid dbh argument";
+
+  # only accept $dbh with RaiseError set
+  $dbh->{RaiseError} 
+    or croak "arg to dbh(..) must have RaiseError=1";
+  return $dbh;
+}
+
+
+
+sub statementClass {
+  my ($class, $statementClass) = @_;
+
+  if ($statementClass) {
+    $class->_ensureClassLoaded($statementClass);
+    $class->classData->{statementClass} = $statementClass;
+  }
+  return $class->classData->{statementClass};
+}
+
+
 
 sub debug { 
   my ($class, $debug) = @_;
@@ -450,6 +604,15 @@ sub selectImplicitlyFor {
   return $class->classData->{selectImplicitlyFor};
 }
 
+sub dbiPrepareMethod {
+  my $class = shift;
+
+  if (@_) {
+    $class->classData->{dbiPrepareMethod} = shift;
+  }
+  return $class->classData->{dbiPrepareMethod};
+}
+
 
 sub tables {
   my $class = shift;
@@ -463,51 +626,101 @@ sub views {
 }
 
 
-sub doTransaction { 
-  my ($class, $coderef) = @_;
 
-  my $dbh = $class->dbh or croak "no database handle for transaction";
+
+
+my @default_state_components = qw/dbh dbh_options debug selectImplicitlyFor 
+                                  dbiPrepareMethod statementClass/;
+
+sub localizeState {
+  my ($class, @components) = @_; 
+  @components = @default_state_components unless @components;
+
+  my $class_data  = $class->classData;
+  my %saved_state;
+  $saved_state{$_} = $class_data->{$_} foreach @components;
+
+  return DBIx::DataModel::Schema::_State->new($class, \%saved_state);
+}
+
+
+
+sub doTransaction { 
+  my ($class, $coderef, $new_dbh, %new_dbh_options) = @_; 
+
+  my $classData        = $class->classData;
+  my $transaction_dbhs = $classData->{transaction_dbhs} ||= [];
+
+  # localize the dbh and its options, if so requested. 
+  my $local_state = $class->localizeState(qw/dbh dbh_options/)
+    and ($classData->{dbh},                  $classData->{dbh_options})
+      = ($class->_check_valid_dbh($new_dbh), \%new_dbh_options        )
+    if $new_dbh; # postfix "if" because $local_state must not be in a block
+
+  # check that we have a dbh
+  $classData->{dbh} or croak "no database handle for transaction";
 
   # how to call and how to return will depend on context
   my $want = wantarray ? "array" : defined(wantarray) ? "scalar" : "void";
-  my ($return_scalar, @return_array);
-  my $call_in_context = {
-    array  => sub {@return_array  = $coderef->()},
-    scalar => sub {$return_scalar = $coderef->()},
-    void   => sub {                 $coderef->()},
-   }->{$want};
-  my $return_in_context = {
-    array  => sub {return @return_array },
-    scalar => sub {return $return_scalar},
-    void   => sub {return               },
+  my $in_context = {
+    array  => do {my @array;
+                  {call   => sub {@array = $coderef->()}, 
+                   return => sub {return @array}}},
+    scalar => do {my $scalar;
+                  {call   => sub {$scalar = $coderef->()}, 
+                   return => sub {return $scalar}}},
+    void   =>     {call   => sub {$coderef->()}, 
+                   return => sub {return}}
    }->{$want};
 
-  if (! $dbh->{AutoCommit}) { # if already within a transaction, just execute
-    $call_in_context->();
+
+  my $begin_work_and_exec = sub {
+    # make sure dbh is in transaction mode
+    if ($classData->{dbh}{AutoCommit}) {
+      $classData->{dbh}->begin_work; # will set AutoCommit to false
+      push @$transaction_dbhs, $classData->{dbh};
+    }
+
+    # do the real work
+    $in_context->{call}->();
+  };
+
+  if (@$transaction_dbhs) { # if in a nested transaction, just exec
+    $begin_work_and_exec->();
   }
-  else {                      # else try to execute and commit
-    $dbh->begin_work;
-    eval { $call_in_context->(); $dbh->commit; 1};
-    my $errstr = $@;
-    if ($errstr) { # the transaction failed
-      my $rollback_status = 'OK';
-      eval {$dbh->rollback; 1} # "1" needed because some drivers (JDBC) do 
-                               # not return true upon rollback
-        or $rollback_status = "FAILED $@";
-      croak "FAILED TRANSACTION: $errstr (rollback: $rollback_status)";
+  else { # else try to execute and commit in an eval block
+    eval {
+      # check AutoCommit state
+      $classData->{dbh}{AutoCommit}
+        or croak "dbh was not in Autocommit mode before initial transaction";
+
+      # execute the transaction
+      $begin_work_and_exec->();
+
+      # commit all dbhs and then reset the list of dbhs
+      $_->commit foreach @$transaction_dbhs;
+      delete $classData->{transaction_dbhs};
     };
+
+    # if any error, rollback
+    my $errstr = $@;
+    if ($errstr) {              # the transaction failed
+      my @rollback_errs = grep {$_} map {eval{$_->rollback}; $@} 
+                                        reverse @$transaction_dbhs;
+      my $status = @rollback_errs ? CORE::join(", ", @rollback_errs) : "OK";
+      delete $classData->{transaction_dbhs};
+      croak "FAILED TRANSACTION: $errstr (rollback: $status)";
+    }
   }
 
-  return $return_in_context->();
+  return $in_context->{return}->();
 }
 
 
 sub keepLasth {
   my $class = shift;
 
-  if (@_) {
-    $class->classData->{keepLasth} = shift;
-  }
+  $class->classData->{keepLasth} = shift if @_;
   return $class->classData->{keepLasth};
 }
 
@@ -519,26 +732,19 @@ sub lasth {
 
 
 
-sub _sqlJoins { # connect a sequence of joins according to SQL dialect
-  my ($leftmost, $joins, $joinSyntax, $associativity) = @_;
+sub unbless {
+  my $class = shift;
 
-  my $sql;
+  eval "use Acme::Damn (); 1"
+    or croak "cannot unbless, Acme::Damn does not seem to be installed";
 
-  if ($associativity eq "right") {
-    my $joinOn;
-    ($sql, $joinOn) = @{pop @$joins};
-    foreach my $operand (reverse(@$joins), [$leftmost, undef]) {
-      $sql = sprintf $joinSyntax, $operand->[0], $sql, $joinOn;
-      $joinOn = $operand->[1];
-    }
-  } else {			# left associativity
-    $sql = $leftmost;
-    foreach my $operand (@$joins) {
-      $sql = sprintf $joinSyntax, $sql, $operand->[0], $operand->[1];
-    }
-  }
-  return $sql;
+  _unbless($_) foreach @_;
+
+  return wantarray ? @_ : $_[0];
 }
+
+
+
 
 
 #----------------------------------------------------------------------
@@ -558,14 +764,16 @@ sub _createPackage {
 
 
 sub _defineMethod {
-  my ($schema, $pckName, $methName, $coderef) = @_;
+  my ($schema, $pckName, $methName, $coderef, $silent) = @_;
   my $fullName = $pckName.'::'.$methName;
 
   no strict 'refs';
 
   if ($coderef) {
-    not defined(&{$fullName}) or 
-      croak "method $fullName is already defined";
+    not defined(&{$fullName})
+      or croak "method $fullName is already defined";
+    $silent or not $pckName->can($methName)
+      or carp "method $methName in $pckName will be overridden";
     *{$fullName} = $coderef;
   }
   else {
@@ -574,9 +782,56 @@ sub _defineMethod {
 }
 
 
+sub _ensureClassLoaded {
+  my ($schema, $to_load) = @_;
+  no strict 'refs';
+  defined(%{$to_load.'::'}) or eval "require $to_load" 
+                            or croak "can't load class $to_load : $@";
+}
+
 #----------------------------------------------------------------------
 # UTILITY FUNCTIONS (PRIVATE)
 #----------------------------------------------------------------------
+
+
+sub _sqlJoins { # connect a sequence of joins according to SQL dialect
+  my ($leftmost, $joins, $dialect, $joinType) = @_;
+  # joins is an arrayref of structs {table => , cond => , alias => }
+
+  my $join_syntax = $dialect->{$joinType}
+    or croak "no such join type in sqlDialect: $joinType";
+
+  my $sql;
+
+  if ($dialect->{joinAssociativity} eq "right") {
+    my $last_join = pop @$joins;
+    my $join_on   = $last_join->{cond};
+       $sql       = $last_join->{table}->db_table;
+    foreach my $operand (reverse @$joins) {
+      my $table = _tableAlias($dialect, $operand);
+      $sql = sprintf $join_syntax, $table, $sql, $join_on;
+      $join_on = $operand->{cond};
+    }
+    $sql = sprintf $join_syntax, $leftmost, $sql, $join_on;
+  } 
+  else { # left associativity
+    $sql = $leftmost;
+    foreach my $operand (@$joins) {
+      my $table = _tableAlias($dialect, $operand);
+      $sql = sprintf $join_syntax, $sql, $table, $operand->{cond};
+    }
+  }
+  return $sql;
+}
+
+sub _tableAlias {
+  my ($dialect, $source_info) = @_;
+  my $db_table = $source_info->{table}->db_table;
+  my $alias    = $source_info->{alias};
+  return 
+    $alias ? sprintf($dialect->{tableAlias} || "%s AS %s", $db_table, $alias)
+           : $db_table;
+}
 
 
 sub _multipl_min {
@@ -588,20 +843,51 @@ sub _multipl_min {
   croak "illegal multiplicity : $multiplicity";
 }
 
-use constant LARGE_NUMBER => 9999;
-
 sub _multipl_max {
   my $multiplicity = shift;
   for ($multiplicity) {
     /(\d+)$/ and return $1;
-    /[*n]$/  and return LARGE_NUMBER;
+    /[*n]$/  and return POSIX::INT_MAX;
   }
   croak "illegal multiplicity : $multiplicity";
 }
 
 
+sub _unbless {
+  my $obj = shift;
 
-1; # End of DBIx::DataModel::Schema
+  no strict;               # because Acme::Damn will only be loaded on-demand
+  Acme::Damn::damn($obj) if Scalar::Util::blessed($obj);
+
+  for (ref $obj) {
+    /HASH/  and do {  _unbless($_) foreach values %$obj;  };
+    /ARRAY/ and do {  _unbless($_) foreach @$obj;         };
+  }
+}
+
+
+
+#----------------------------------------------------------------------
+# INTERNAL CLASS FOR LOCALIZING STATE (see L</localizeState> method
+#----------------------------------------------------------------------
+
+package DBIx::DataModel::Schema::_State;
+
+sub new {
+  my ($class, $schema, $state) = @_;
+  bless [$schema, $state], $class;
+}
+
+
+sub DESTROY { # called when the guard goes out of scope
+  my ($self) = @_;
+  my ($schema, $state) = @$self;
+  my $classData = $schema->classData;
+  $classData->{$_} = $state->{$_} foreach keys %$state;
+}
+
+
+1; 
 
 __END__
 
@@ -617,46 +903,51 @@ This is the parent class for all schema classes created through
 
 =head1 METHODS
 
-Methods are documented in L<DBIx::DataModel|DBIx::DataModel>. This module
-implements 
+Methods are documented in 
+L<DBIx::DataModel::Doc::Reference|DBIx::DataModel::Doc::Reference>.
+This module implements
 
 =over
 
-=item L<Schema|DBIx::DataModel/Schema>
+=item L<Schema|DBIx::DataModel::Doc::Reference/Schema>
 
-=item L<Table|DBIx::DataModel/Table>
+=item L<Table|DBIx::DataModel::Doc::Reference/Table>
 
-=item L<View|DBIx::DataModel/View>
+=item L<View|DBIx::DataModel::Doc::Reference/View>
 
-=item L<Association|DBIx::DataModel/Association>
+=item L<Association|DBIx::DataModel::Doc::Reference/Association>
 
-=item L<ViewFromRoles|DBIx::DataModel/ViewFromRoles>
+=item L<join|DBIx::DataModel::Doc::Reference/join>
 
-=item L<ColumnType|DBIx::DataModel/ColumnType>
+=item L<ColumnType|DBIx::DataModel::Doc::Reference/ColumnType>
 
-=item L<dbh|DBIx::DataModel/dbh>
+=item L<dbh|DBIx::DataModel::Doc::Reference/dbh>
 
-=item L<debug|DBIx::DataModel/debug>
+=item L<debug|DBIx::DataModel::Doc::Reference/debug>
 
-=item L<noUpdateColumns|DBIx::DataModel/noUpdateColumns>
+=item L<noUpdateColumns|DBIx::DataModel::Doc::Reference/noUpdateColumns>
 
-=item L<autoUpdateColumns|DBIx::DataModel/autoUpdateColumns>
+=item L<autoUpdateColumns|DBIx::DataModel::Doc::Reference/autoUpdateColumns>
 
-=item L<selectImplicitlyFor|DBIx::DataModel/selectImplicitlyFor>
+=item L<selectImplicitlyFor|DBIx::DataModel::Doc::Reference/selectImplicitlyFor>
 
-=item L<tables|DBIx::DataModel/tables>
+=item L<dbiPrepareMethod|DBIx::DataModel::Doc::Reference/dbiPrepareMethod>
 
-=item L<views|DBIx::DataModel/views>
+=item L<tables|DBIx::DataModel::Doc::Reference/tables>
 
-=item L<doTransaction|DBIx::DataModel/doTransaction>
+=item L<views|DBIx::DataModel::Doc::Reference/views>
 
-=item L<keepLasth|DBIx::DataModel/keepLasth>
+=item L<localizeState|DBIx::DataModel::Doc::Reference/localizeState>
 
-=item L<lasth|DBIx::DataModel/lasth>
+=item L<statementClass|DBIx::DataModel::Doc::Reference/statementClass>
 
-=item L<_createPackage|DBIx::DataModel/_createPackage>
+=item L<doTransaction|DBIx::DataModel::Doc::Reference/doTransaction>
 
-=item L<_defineMethod|DBIx::DataModel/_defineMethod>
+=item L<unbless|DBIx::DataModel::Doc::Reference/unbless>
+
+=item L<_createPackage|DBIx::DataModel::Doc::Reference/_createPackage>
+
+=item L<_defineMethod|DBIx::DataModel::Doc::Reference/_defineMethod>
 
 =back
 
@@ -668,7 +959,7 @@ Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2006 Laurent Dami.
+Copyright 2006, 2008 Laurent Dami.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.

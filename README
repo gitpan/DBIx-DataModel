@@ -1,15 +1,22 @@
 DBIx-DataModel
 
-The README is used to introduce the module and provide instructions on
-how to install the module, any machine dependencies it may have (for
-example C compilers and installed libraries) and any other information
-that should be provided before the module is installed.
 
-A README file is required for CPAN modules since CPAN extracts the README
-file from a module distribution so that people browsing the archive
-can use it get an idea of the modules uses. It is usually a good idea
-to provide version information here so that people can decide whether
-fixes for the module are worth downloading.
+DESCRIPTION
+
+DBIx::DataModel is a wrapper framework for building Perl
+abstractions (classes, objects and methods) that interact
+with relational database management systems (RDBMS).  
+Of course the ubiquitous DBI module is used as
+a basic layer for communicating with databases; on top of that,
+DBIx::DataModel provides facilities for generating SQL queries,
+joining tables automatically, navigating through the results,
+converting values, and building complex datastructures so that other
+modules can conveniently exploit the data.
+
+
+VERSION
+
+1.0
 
 INSTALLATION
 
@@ -23,7 +30,7 @@ To install this module, run the following commands:
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2006 Laurent Dami
+Copyright (C) 2006,2008 Laurent Dami
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.

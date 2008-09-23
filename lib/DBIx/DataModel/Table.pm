@@ -4,7 +4,9 @@ use warnings;
 no warnings 'uninitialized';
 use strict;
 use Carp;
-use base 'DBIx::DataModel::AbstractTable';
+use base 'DBIx::DataModel::Source';
+use Storable     qw/freeze/;
+use Scalar::Util qw/refaddr/;
 
 
 sub DefaultColumns {
@@ -26,6 +28,7 @@ sub ColumnType {
   foreach my $column (@args) {
     $class->ColumnHandlers($column, %$handlers)
   }
+  return $class;
 }
 
 
@@ -37,6 +40,7 @@ sub ColumnHandlers {
   while (my ($handlerName, $coderef) = each %handlers) {
     $class->classData->{columnHandlers}{$columnName}{$handlerName} = $coderef;
   }
+  return $class;
 }
 
 
@@ -65,7 +69,8 @@ sub AutoExpand {
     }
   };
 
-  $class->schema->_defineMethod($class => autoExpand => $autoExpand);
+  $class->schema->_defineMethod($class => autoExpand => $autoExpand, "silent");
+  return $class;
 }
 
 
@@ -122,17 +127,23 @@ sub fetch {
   not ref($class) or croak "fetch should be called as class method";
   my %select_args;
 
+  # if last argument is a hashref, it contains arguments to the select() call
   if (UNIVERSAL::isa($_[-1], 'HASH')) {
     %select_args = %{pop @_};
   }
-  
-  my %where;
-  @where{$class->primKey} = @_;
-  $select_args{-where} = \%where;
-  my $rows = $class->select(%select_args) or return;
-  carp "${class}->fetch(): too many results" if @$rows > 1;
-  return $rows->[0]; # could be undef
+
+  return $class->select(-fetch => @_, %select_args);
 }
+
+
+sub fetch_cached {
+  my $class = shift;
+  my $dbh_addr    = refaddr $class->schema->dbh;
+  my $freeze_args = freeze \@_;
+  return $class->classData->{fetch_cached}{$dbh_addr}{$freeze_args} 
+            ||= $class->fetch(@_);
+}
+
 
 
 sub insert {
@@ -209,11 +220,12 @@ sub _rawInsert {
   }
 
   # perform the insertion
-  my ($sql, @bind) = $class->schema->classData->{sqlAbstr}
-                           ->insert($class->db_table, \%clone);
+  my $schema_data = $class->schema->classData;
+  my ($sql, @bind) = $schema_data->{sqlAbstr}
+                                 ->insert($class->db_table, \%clone);
   $class->_debug($sql . " / " . join(", ", @bind) );
   my $sth = $class->schema->dbh->prepare($sql);
-  $class->schema->classData->{lasth} = $sth if $class->schema->keepLasth;
+  $schema_data->{lasth} = $sth if $schema_data->{keepLasth};
   $sth->execute(@bind);
 }
 
@@ -266,6 +278,9 @@ sub hasInvalidColumns {
   }
   return @invalid ? \@invalid : undef;
 }
+
+
+
 
 
 #------------------------------------------------------------
@@ -331,16 +346,15 @@ sub _modifyData { # called by methods 'update' and 'delete'.
   }
 
   # unbless $self into just a hashref and perform the update
-  my $schemaClassData = $self->schema->classData;
-  my $sqlA            = $schemaClassData->{sqlAbstr};
-  my $keepLasth       = $self->schema->keepLasth;
+  my $schema_data = $self->schema->classData;
+  my $sqlA        = $schema_data->{sqlAbstr};
   bless $self, 'HASH';
-  my ($sql, @bind) = ($toDo eq 'update') ? 
-                        $sqlA->update($db_table, $self, \%where) :
-			$sqlA->delete($db_table, \%where);
+  my ($sql, @bind) 
+    = ($toDo eq 'update') ? $sqlA->update($db_table, $self, \%where) 
+                          : $sqlA->delete($db_table, \%where);
   $class->_debug($sql . " / " . join(", ", @bind) );
   my $sth = $dbh->prepare($sql);
-  $schemaClassData->{lasth} = $sth if $keepLasth;
+  $schema_data->{lasth} = $sth if $schema_data->{keepLasth};
   $sth->execute(@bind);
 }
 
@@ -364,36 +378,39 @@ This is the parent class for all table classes created through
 
 =head1 METHODS
 
-Methods are documented in L<DBIx::DataModel|DBIx::DataModel>. This module
-implements 
+Methods are documented in 
+L<DBIx::DataModel::Doc::Reference|DBIx::DataModel::Doc::Reference>.
+This module implements
 
 =over
 
-=item L<DefaultColumns|DBIx::DataModel/DefaultColumns>
+=item L<DefaultColumns|DBIx::DataModel::Doc::Reference/DefaultColumns>
 
-=item L<ColumnType|DBIx::DataModel/ColumnType>
+=item L<ColumnType|DBIx::DataModel::Doc::Reference/ColumnType>
 
-=item L<ColumnHandlers|DBIx::DataModel/ColumnHandlers>
+=item L<ColumnHandlers|DBIx::DataModel::Doc::Reference/ColumnHandlers>
 
-=item L<AutoExpand|DBIx::DataModel/AutoExpand>
+=item L<AutoExpand|DBIx::DataModel::Doc::Reference/AutoExpand>
 
-=item L<autoUpdateColumns|DBIx::DataModel/autoUpdateColumns>
+=item L<autoUpdateColumns|DBIx::DataModel::Doc::Reference/autoUpdateColumns>
 
-=item L<noUpdateColumns|DBIx::DataModel/noUpdateColumns>
+=item L<noUpdateColumns|DBIx::DataModel::Doc::Reference/noUpdateColumns>
 
-=item L<primKey|DBIx::DataModel/primKey>
+=item L<primKey|DBIx::DataModel::Doc::Reference/primKey>
 
-=item L<fetch|DBIx::DataModel/fetch>
+=item L<fetch|DBIx::DataModel::Doc::Reference/fetch>
 
-=item L<insert|DBIx::DataModel/insert>
+=item L<fetch_cached|DBIx::DataModel::Doc::Reference/fetch_cached>
 
-=item L<_singleInsert|DBIx::DataModel/_singleInsert>
+=item L<insert|DBIx::DataModel::Doc::Reference/insert>
 
-=item L<_rawInsert|DBIx::DataModel/_rawInsert>
+=item L<_singleInsert|DBIx::DataModel::Doc::Reference/_singleInsert>
 
-=item L<update|DBIx::DataModel/update>
+=item L<_rawInsert|DBIx::DataModel::Doc::Reference/_rawInsert>
 
-=item L<hasInvalidColumns|DBIx::DataModel/hasInvalidColumns>
+=item L<update|DBIx::DataModel::Doc::Reference/update>
+
+=item L<hasInvalidColumns|DBIx::DataModel::Doc::Reference/hasInvalidColumns>
 
 =back
 
