@@ -4,7 +4,6 @@ use warnings;
 use strict;
 use Carp;
 use base 'DBIx::DataModel::Source';
-require 5.8.0;
 
 
 # Redefines the method inherited from DBIx::DataModel::Source,

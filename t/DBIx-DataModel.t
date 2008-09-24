@@ -306,16 +306,22 @@ die_ok {$emp->emp_id};
 
 
   # unbless
-  my $emp2 = HR::Employee->blessFromDB({
-    emp_id => 999,
-    activities => [map {HR::Activity->blessFromDB({foo => $_})} 1..3],
-    spouse     => HR::Employee->blessFromDB({foo => 'spouse'}),
-  });
-  is_deeply(HR->unbless($emp2),
-            {emp_id => 999, 
-             spouse => {foo => 'spouse'},
-             activities => [{foo => 1}, {foo => 2}, {foo => 3}]}, 
-            "unbless");
+ SKIP: {
+    eval "use Acme::Damn; 1"
+      or skip "Acme::Damn does not seem to be installed", 1;
+
+    my $emp2 = HR::Employee->blessFromDB({
+      emp_id => 999,
+      activities => [map {HR::Activity->blessFromDB({foo => $_})} 1..3],
+      spouse     => HR::Employee->blessFromDB({foo => 'spouse'}),
+    });
+    is_deeply(HR->unbless($emp2),
+              {emp_id => 999, 
+               spouse => {foo => 'spouse'},
+               activities => [{foo => 1}, {foo => 2}, {foo => 3}]}, 
+              "unbless");
+  }
+
 
   # testing combination of where criteria
   my $statement = HR::Employee->activities(-where => {foo => [3, 4]});

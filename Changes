@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.04 
+  - removed non-portable v-string in View.pm
+  - fixed test when Acme::Damn is not installed
+
+
 v1.03 23.09.2008 CPAN release
 
 v1.01
