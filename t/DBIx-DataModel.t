@@ -344,21 +344,24 @@ die_ok {$emp->emp_id};
           [qw/bar foo 123 456 999/], "combined where, arrayrefs");
 
 
-  # select -resultAs => 'flat_arrayref'
-  $dbh->{mock_clear_history} = 1;
-  $dbh->{mock_add_resultset} = [ [qw/col1 col2/],
-                                 [qw/foo1 foo2/], 
-                                 [qw/bar1 bar2/] ];
-  my $pairs = HR::Employee->select(-columns => [qw/col1 col2/],
-                                   -resultAs => 'flat_arrayref');
-  my %hash = @$pairs;
+  SKIP : {
+    $DBD::Mock::VERSION ne '1.37'
+      or skip "DBD::Mock v1.37 is bugged (http://rt.cpan.org/Ticket/Display.html?id=37054)", 1;
 
-  # TEST BELOW DOES NOT WORK because DBD::Mock does not implement
-  # bind_columns. So we put a stupid test instead
-  # is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'columns'");
-  is_deeply(\%hash, {'' => undef}, "resultAs => 'columns'");
+    # select -resultAs => 'flat_arrayref'
+    $dbh->{mock_clear_history} = 1;
+    $dbh->{mock_add_resultset} = [ [qw/col1 col2/],
+                                   [qw/foo1 foo2/], 
+                                   [qw/bar1 bar2/] ];
+    my $pairs = HR::Employee->select(-columns => [qw/col1 col2/],
+                                     -resultAs => 'flat_arrayref');
+    my %hash = @$pairs;
 
-
+    # TEST BELOW DOES NOT WORK because DBD::Mock does not implement
+    # bind_columns. So we put a stupid test instead
+    # is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'columns'");
+    is_deeply(\%hash, {'' => undef}, "resultAs => 'columns'");
+  }
 
   # insertion 
   $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
