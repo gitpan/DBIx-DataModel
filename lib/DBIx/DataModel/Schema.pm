@@ -192,7 +192,7 @@ sub View {
   if ($FROM_THAW) {
     # Storable::thaw already created the package; just add @ISA to it
     no strict 'refs';
-    *{$view."::ISA"} = $isa;
+    @{$view."::ISA"} = @$isa;
   }
   else {
     # normal case: create a new package
@@ -501,7 +501,17 @@ sub join {
   $class->View(@view_args);
 
   # add alias information
-  $viewName->classData->{tableAliases} = \%aliases;
+
+
+  # in Perl5.10, when reaching here while called from "require",
+  # called itself from "STORABLE_thaw", then the method cache is 
+  # not yet available. So we replace the method call by a direct
+  # functional call to the method implementation
+  # COMMENTED : 
+
+$viewName->classData->{tableAliases} = \%aliases;
+
+##  DBIx::DataModel::Base::classData($viewName)->{tableAliases} = \%aliases;
 
   return $viewName;
 }
@@ -745,8 +755,6 @@ sub unbless {
 
 
 
-
-
 #----------------------------------------------------------------------
 # UTILITY METHODS (PRIVATE)
 #----------------------------------------------------------------------
@@ -756,8 +764,8 @@ sub _createPackage {
   my ($schema, $pckName, $isa_arrayref) = @_;
   no strict 'refs';
 
-  not defined(%{$pckName.'::'}) or croak "package $pckName is already defined";
-  *{$pckName."::ISA"} = $isa_arrayref;
+  !(%{$pckName.'::'}) or croak "package $pckName is already defined";
+  @{$pckName."::ISA"} = @$isa_arrayref;
   return $pckName;
 }
 
@@ -785,8 +793,8 @@ sub _defineMethod {
 sub _ensureClassLoaded {
   my ($schema, $to_load) = @_;
   no strict 'refs';
-  defined(%{$to_load.'::'}) or eval "require $to_load" 
-                            or croak "can't load class $to_load : $@";
+  (%{$to_load.'::'}) or eval "require $to_load" 
+                     or croak "can't load class $to_load : $@";
 }
 
 #----------------------------------------------------------------------

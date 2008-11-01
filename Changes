@@ -1,5 +1,21 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.06
+  - Schema.pm : replaced deprecated 
+        if(defined(%{$pck.".."})) 
+    by 
+        if(%{$pck.".."})
+  - t/Storable.t : 
+      - parent process in eval() to avoid child zombie if parent dies
+      - if Perl < 5.8, fallback to IO::String
+  - t/DBIx-DataModel.t : 
+      - pre-test DBD::Mock on functionality rather than version number
+  - Schema.pm, View.pm : dynamic subclasses created through
+       @{$subclass."::ISA"} = @$aref;
+    instead of 
+       *{$subclass."::ISA"} = $aref;
+    so that Perl5.10 method cache is properly invalidated.
+
 v1.05
   - fixed hanging test because of bug 37054 in DBD::Mock
 

@@ -76,6 +76,7 @@ push @INC, sub { # coderef into @INC: see L<perlfunc/require>
   if ($] >= 5.008) { open $fh, "<", \$fake_file or die $!; } # modern Perl
   else             { eval "use IO::String; 1" or die $@;     # older versions
                      $fh = IO::String->new($fake_file);    }
+
   return $fh;
 };
 

@@ -13,7 +13,8 @@ use DBIx::DataModel;
 SKIP:
 {
   $] >= 5.008
-   or skip "need Perl 5.8 for in-memory IO::Handle ", N_TESTS;
+   or eval "use IO::String; 1" 
+   or skip "in-memory IO::Handle: need either Perl 5.8 or IO::String", N_TESTS;
 
   DBIx::DataModel->Schema('HR');
 
@@ -36,16 +37,22 @@ SKIP:
   no strict 'refs';
 
   if ($pid) { # is parent
-    my $view    = HR->join(qw/Employee activities department/);
-    my @records = map {bless {"foo$_" => "bar$_"}, $view} 1..3;
-    my $isa     = \@{$view . "::ISA"};
 
-    # serialize the instances and some class information
-    store_fd [\@records, $view, $isa, $view->classData], $parent_fh;
-    $parent_fh->flush;
+    # do the following in an eval() to make sure that _exit is called anyway
+    eval {
+      my $view    = HR->join(qw/Employee activities department/);
+      my @records = map {bless {"foo$_" => "bar$_"}, $view} 1..3;
+      my $isa     = \@{$view . "::ISA"};
 
-    # the child will perform the tests, so force exit on parent
-    wait;
+      # serialize the instances and some class information
+      store_fd [\@records, $view, $isa, $view->classData], $parent_fh;
+      $parent_fh->flush;
+
+      wait;
+    }
+      or print STDERR "Parent process died : $@\n";
+
+    # force exit to bypass Test::More exit handlers (the child will do it).
     _exit(0);
   }
   else {       # is child

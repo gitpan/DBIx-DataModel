@@ -1,6 +1,6 @@
 ---
 name: DBIx-DataModel
-version: 1.05
+version: 1.06
 author:
   - 'Laurent Dami <laurent.dami AT etat.ge.ch>'
 abstract: Classes and UML-style Associations on top of DBI
@@ -19,7 +19,7 @@ recommends:
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 1.05
+    version: 1.06
   DBIx::DataModel::Base:
     file: lib/DBIx/DataModel/Base.pm
   DBIx::DataModel::Schema:

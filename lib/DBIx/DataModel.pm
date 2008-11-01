@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '1.05';
+our $VERSION = '1.06';
 
 sub Schema {
   my $class = shift;
@@ -515,7 +515,7 @@ general L<REFERENCE|DBIx::DataModel::Doc::Reference> chapter).
 Upon loading, L<DBIx::DataModel::View> adds a coderef
 into global C<@INC> (see L<perlfunc/require>), so that it can take 
 control and generate a class on the fly when retrieving frozen
-objects from L<Storable/thaw>. Should be totally harmless unless
+objects from L<Storable/thaw>. This should be totally harmless unless
 you do some very special things with C<@INC>.
 
 
