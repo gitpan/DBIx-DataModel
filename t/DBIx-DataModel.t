@@ -346,31 +346,17 @@ die_ok {$emp->emp_id};
 
   # select -resultAs => 'flat_arrayref'
   SKIP : {
+    $DBD::Mock::VERSION >= 1.39
+      or skip "need DBD::Mock 1.39 or greater", 1;
+
     my @fake_rs = ([qw/col1 col2/], [qw/foo1 foo2/], [qw/bar1 bar2/]);
-
-    # first check DBD::Mock, because if bugged, our next test will hang
-    $dbh->{mock_clear_history} = 1;
-    $dbh->{mock_add_resultset} = \@fake_rs;
-    my $sth = $dbh->prepare("select * from foo");
-    $sth->execute;
-    $sth->bind_columns(\my $col1, \my $col2);
-    my (undef, undef, $tst_row) = ($sth->fetch, $sth->fetch, $sth->fetch);
-    !$tst_row  # should be undef
-      or skip "this version of DBD::Mock is bugged (see "
-            . "http://rt.cpan.org/Ticket/Display.html?id=37054)", 1;
-
-    # DBD::Mock OK, so do the test
     $dbh->{mock_clear_history} = 1;
     $dbh->{mock_add_resultset} = \@fake_rs;
 
     my $pairs = HR::Employee->select(-columns  => [qw/col1 col2/],
                                      -resultAs => 'flat_arrayref');
     my %hash = @$pairs;
-
-    # TEST BELOW DOES NOT WORK because DBD::Mock does not implement
-    # bind_columns. So we put a stupid test instead
-    # is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'columns'");
-    is_deeply(\%hash, {'' => undef}, "resultAs => 'columns'");
+    is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'flat_arrayref'");
   }
 
   # insertion 
