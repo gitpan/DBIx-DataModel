@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.08
+  - fixed bug with -pageIndex (missing code)
+
 v1.07
    - adapted tests for DBD::Mock 1.39
 

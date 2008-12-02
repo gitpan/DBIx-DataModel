@@ -1540,7 +1540,6 @@ when using aggregator functions :
   my ($max_col1, $avg_col2, $count_col3) = @$array_ref;
 
 
-                                       
 =item B<statement>
 
 The result will be an instance of 

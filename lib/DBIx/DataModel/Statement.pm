@@ -513,9 +513,9 @@ sub all {
 }
 
 
-sub pageSize       {shift->{args}{-pageSize} || INT_MAX}
-sub pageIndex      {shift->{pageIndex}       || 1      }
-sub offset         {shift->{offset}          || 0      }
+sub pageSize       {shift->{args}{-pageSize}  || INT_MAX}
+sub pageIndex      {shift->{args}{-pageIndex} || 1      }
+sub offset         {shift->{offset}           || 0      }
 
 
 sub pageCount {
@@ -724,15 +724,10 @@ sub _reorganize_pagination {
     not exists $args->{$_} or croak "conflicting parameters: -pageSize and $_"
       for qw/-limit -offset/;
     $args->{-limit} = $args->{-pageSize};
-    $self->_set_pageIndex($args->{-pageIndex}) if $args->{-pageIndex};
-
+    if ($args->{-pageIndex}) {
+      $args->{-offset} = ($args->{-pageIndex} - 1) * $args->{-pageSize};
+    }
   }
-}
-
-
-sub _set_pageIndex {
-  my ($self, $pageIndex) = @_;
-
 }
 
 
@@ -1132,8 +1127,6 @@ redefined in subclasses :
 =item _reorganize_pagination
 
 =item _resolve_source
-
-=item _set_pageIndex
 
 =item _limit_offset
 
