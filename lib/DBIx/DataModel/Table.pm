@@ -132,7 +132,7 @@ sub fetch {
     %select_args = %{pop @_};
   }
 
-  return $class->select(-fetch => @_, %select_args);
+  return $class->select(-fetch => \@_, %select_args);
 }
 
 

@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.09
+  - fixed bug with ->fetch(@prim_key) when scalar(@prim_key) > 1
+
 v1.08
   - fixed bug with -pageIndex (missing code)
 
