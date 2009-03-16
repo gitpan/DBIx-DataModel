@@ -2,8 +2,9 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 use DBI;
+use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
-use Test::More tests => 5;
+use Test::More tests => 3;
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -49,16 +50,14 @@ SKIP: {
 
 
   sub sqlLike { # closure on $dbh
-    my $sql = quotemeta(shift);
-    my $bind = shift;
-    my $msg = shift;
-    $sql =~ s/(\\?\s)+/\\s+/gs;
-    $sql =~ s/\\\(/\\(\\s*/g;
-    $sql =~ s/\\\)/\\s*\\)/g;
-    my $regex = qr/^\s*$sql\s*$/i;
-    my $dbd_last = $dbh->{mock_all_history}[-1];
-    like($dbd_last->statement, $regex, "$msg (SQL)");
-    is_deeply($dbd_last->bound_params, $bind, "$msg (params)");
+    my $msg = pop @_;    
+
+    for (my $hist_index = -(@_ / 2); $hist_index < 0; $hist_index++) {
+      my ($sql, $bind)  = (shift, shift);
+      my $hist = $dbh->{mock_all_history}[$hist_index];
+      is_same_sql_bind($hist->statement, $hist->bound_params,
+                       $sql,             $bind, "$msg [$hist_index]");
+    }
     $dbh->{mock_clear_history} = 1;
   }
 

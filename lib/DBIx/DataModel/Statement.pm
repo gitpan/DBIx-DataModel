@@ -372,12 +372,12 @@ sub select {
       return $self->sql;
     };
 
-    # CASE subquery : just return the SQL and bind values
+    # CASE subquery : return a ref to an arrayref with SQL and bind values
     /^subquery$/i        and do {
       not $callbacks 
         or croak "$callbacks incompatible with -resultAs=>'subquery'";
       my ($sql, @bind) = $self->sql;
-      return [\"($sql)", @bind];
+      return \ ["($sql)", @bind];
     };
 
     # for all other cases, must first execute the statement
@@ -758,8 +758,7 @@ sub _add_conditions { # merge conditions for L<SQL::Abstract/where>
       }
     }
     elsif (isa $cond, 'ARRAY') {
-      $merged{-nest} = $merged{-nest} ? [-and => [-nest => $merged{-nest}, 
-                                                  -nest => $cond]]
+      $merged{-nest} = $merged{-nest} ? [-and => $merged{-nest}, $cond]
                                       : $cond;
     }
     elsif ($cond) {

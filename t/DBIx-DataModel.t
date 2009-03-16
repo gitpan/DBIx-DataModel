@@ -3,8 +3,9 @@ use warnings;
 no warnings 'uninitialized';
 use DBI;
 use Data::Dumper;
+use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
-use constant N_DBI_MOCK_TESTS => 150;
+use constant N_DBI_MOCK_TESTS => 90;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
@@ -125,15 +126,11 @@ SKIP: {
     my $msg = pop @_;    
 
     for (my $hist_index = -(@_ / 2); $hist_index < 0; $hist_index++) {
-      my ($sql, $bind)  = (quotemeta(shift), shift);
-
-      $sql =~ s/(\\?\s)+/\\s+/gs;
-      $sql =~ s/\\\(/\\(\\s*/g;
-      $sql =~ s/\\\)/\\s*\\)/g;
-      my $regex = qr/^\s*$sql\s*$/i;
+      my ($sql, $bind)  = (shift, shift);
       my $hist = $dbh->{mock_all_history}[$hist_index];
-      like($hist->statement, $regex, "$msg [$hist_index] (SQL)");
-      is_deeply($hist->bound_params, $bind, "$msg [$hist_index] (params)");
+
+      is_same_sql_bind($hist->statement, $hist->bound_params,
+                       $sql,             $bind, "$msg [$hist_index]");
     }
     $dbh->{mock_clear_history} = 1;
   }
@@ -329,8 +326,8 @@ die_ok {$emp->emp_id};
                    ->select(-where => {foo => [4, 5]});
 
   sqlLike('SELECT * FROM T_Activity '
-          .  'WHERE ( emp_id = ? AND ( ((     (foo = ?) OR (foo = ?) )) '
-          .                           'AND (( (foo = ?) OR (foo = ?) ))))',
+          .  'WHERE ( emp_id = ? AND ( (     foo = ? OR foo = ? ) '
+          .                           'AND ( foo = ? OR foo = ? )))',
           [999, 3, 4, 4, 5], "combined where");
 
   $statement = HR::Employee->activities(-where => [foo => "bar", bar => "foo"]);
@@ -338,9 +335,9 @@ die_ok {$emp->emp_id};
                    ->select(-where => [foobar => 123, barfoo => 456]);
 
   sqlLike('SELECT * FROM T_Activity '
-          .  'WHERE ( (((      (( (foo = ?   ) OR (bar = ?   ))) '
-          .              'AND (( (foobar = ?) OR (barfoo = ?))) ))) '
-          .           'AND emp_id = ? )',
+          .  'WHERE ( (     (foo = ?  OR bar = ?) '
+          .            'AND (foobar = ? OR barfoo = ?)'
+          .          ') AND emp_id = ? )',
           [qw/bar foo 123 456 999/], "combined where, arrayrefs");
 
 
@@ -358,6 +355,19 @@ die_ok {$emp->emp_id};
     my %hash = @$pairs;
     is_deeply(\%hash, {foo1 => 'foo2', bar1 => 'bar2'}, "resultAs => 'flat_arrayref'");
   }
+
+
+  # subquery
+  my $subquery = HR::Employee->select(
+    -columns  => 'emp_id',
+    -where    => {d_birth => {-between => [1950, 1980]}},
+    -resultAs => 'subquery',
+   );
+  $act = HR::Activity->select(-where => {emp_id => {-not_in => $subquery}});
+  sqlLike('SELECT * FROM T_Activity WHERE emp_id NOT IN '
+            . '(SELECT emp_id FROM T_Employee WHERE d_birth BETWEEN ? AND ?)',
+          [1950, 1980],
+         'subquery');
 
   # insertion 
   $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
@@ -682,6 +692,13 @@ die_ok {$emp->emp_id};
           'COMMIT',     [], "nested transaction commit");
 
 
+  # transaction object
+  eval {HR->doTransaction($fail_trans)};
+  my $err = $@;
+  like ($err->initial_error, qr/^failed transaction/, "initial_error");
+  is_deeply([$err->rollback_errors], [], "rollback_errors");
+
+
   # nested transactions on two different databases
   $dbh->{private_id} = "dbh1";
   my $other_dbh = DBI->connect('DBI:Mock:', '', '', 
@@ -725,7 +742,6 @@ die_ok {$emp->emp_id};
           'BEGIN WORK', [], 
           $upd, [$last_modif, "dbh2", 67], 
           'COMMIT',     [], "nested transaction on dbh2");
-
 } # END OF SKIP BLOCK
 
 

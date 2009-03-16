@@ -134,10 +134,6 @@ Like above: normal SQL syntax and column aliases.
 
 =head2 Nested queries
 
-Requires new version of L<SQL::Abstract> (coming soon), which
-will take a ref to a string as literal SQL, possibly associated
-with bind values. So we will be able to write something like
-
   my $subquery = $source1->select(..., -resultAs => 'subquery');
   my $rows     = $source2->select(
       -columns => ...,

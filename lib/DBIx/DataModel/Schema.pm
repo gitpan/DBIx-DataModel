@@ -9,7 +9,7 @@ use warnings;
 use strict;
 use Carp;
 use base 'DBIx::DataModel::Base';
-use SQL::Abstract;
+use SQL::Abstract 1.50;
 use DBIx::DataModel::Table;
 use DBIx::DataModel::View;
 use POSIX        (); # INT_MAX
@@ -713,18 +713,18 @@ sub doTransaction {
     };
 
     # if any error, rollback
-    my $errstr = $@;
-    if ($errstr) {              # the transaction failed
+    my $err = $@;
+    if ($err) {              # the transaction failed
       my @rollback_errs = grep {$_} map {eval{$_->rollback}; $@} 
                                         reverse @$transaction_dbhs;
-      my $status = @rollback_errs ? CORE::join(", ", @rollback_errs) : "OK";
       delete $classData->{transaction_dbhs};
-      croak "FAILED TRANSACTION: $errstr (rollback: $status)";
+      DBIx::DataModel::Schema::_Exception->throw($err, @rollback_errs);
     }
   }
 
   return $in_context->{return}->();
 }
+
 
 
 sub keepLasth {
@@ -876,7 +876,7 @@ sub _unbless {
 
 
 #----------------------------------------------------------------------
-# INTERNAL CLASS FOR LOCALIZING STATE (see L</localizeState> method
+# PRIVATE CLASS FOR LOCALIZING STATE (see L</localizeState> method
 #----------------------------------------------------------------------
 
 package DBIx::DataModel::Schema::_State;
@@ -892,6 +892,40 @@ sub DESTROY { # called when the guard goes out of scope
   my ($schema, $state) = @$self;
   my $classData = $schema->classData;
   $classData->{$_} = $state->{$_} foreach keys %$state;
+}
+
+
+#----------------------------------------------------------------------
+# PRIVATE CLASS FOR TRANSACTION EXCEPTIONS
+#----------------------------------------------------------------------
+
+package DBIx::DataModel::Schema::_Exception;
+use strict;
+use warnings;
+
+use overload '""' => sub {
+  my $self = shift;
+  my $err             = $self->initial_error;
+  my @rollback_errs   = $self->rollback_errors;
+  my $rollback_status = @rollback_errs ? join(", ", @rollback_errs) : "OK";
+  return "FAILED TRANSACTION: $err (rollback: $rollback_status)";
+};
+
+
+sub throw {
+  my $class = shift;
+  my $self = bless [@_], $class;
+  die $self;
+}
+
+sub initial_error {
+  my $self = shift;
+  return $self->[0];
+}
+
+sub rollback_errors {
+  my $self = shift;
+  return @$self[1..$#{@$self}];
 }
 
 
@@ -958,6 +992,19 @@ This module implements
 =item L<_defineMethod|DBIx::DataModel::Doc::Reference/_defineMethod>
 
 =back
+
+=head1 PRIVATE SUBCLASSES
+
+This module has two internal subclasses.
+
+=head2 _State
+
+A private class for localizing state (using a DESTROY method).
+
+=head2 _Exception
+
+A private class for exceptions during transactions
+(see  L<doTransaction|DBIx::DataModel::Doc::Reference/doTransaction>).
 
 
 

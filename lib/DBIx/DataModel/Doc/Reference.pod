@@ -809,7 +809,7 @@ In addition to the column value, other info is passed to the
 handler :
 
   sub myHandler {
-    my ($columnValue, $obj, $columnName, $handlerName) = @;
+    my ($columnValue, $obj, $columnName, $handlerName) = @_;
     my $newVal = $obj->computeNewVal($columnValue, ...);
     $columnValue = $newVal; # WRONG : will be a no-op
     $_[0] = $newVal;        # OK    : value is converted
@@ -1173,10 +1173,17 @@ from one kind of database to another.
   my $coderef = sub {Table1->insert(...); Table2->update(...); ...};
   MySchema->doTransaction($coderef);
 
-Evaluates the code within a transaction. In case of failure,
-the transaction is rolled back, and an exception is raised with
-the error message and the status of the rollback (because the
-rollback itself may also fail).
+Evaluates the code within a transaction. In case of failure, the
+transaction is rolled back, and an exception is raised, with a message
+containing the initial error and the status of the rollback (because
+the rollback itself may also fail). If you need finer details,
+you can treat the as an object with two methods C<initial_error>
+and C<rollback_errors>:
+
+    eval {MySchema->doTransaction($coderef); 1}
+    or do {my $err = $@;
+           explain($err->initial_error, $err->rollback_errors)};
+
 
 Usually the coderef passed as argument will be a
 closure that may refer to variables local to the environment where
@@ -1605,10 +1612,9 @@ together with the bind values.
 
 =item B<subquery> 
 
-Returns an arrayref containing C<< [\"($sql)", @bind] >>. 
-This is in anticipation for the future version of 
-L<SQL::Abstract|SQL::Abstract> (coming soon) where we will be able
-to write something like
+Returns a ref to an arrayref containing C<< \["($sql)", @bind] >>. 
+This is meant to be passed to a second
+query through L<SQL::Abstract|SQL::Abstract>, as in :
 
   my $subquery = $source1->select(..., -resultAs => 'subquery');
   my $rows     = $source2->select(

@@ -257,6 +257,7 @@ sub _insert_subtrees {
     while (my ($role, $arrayref) = each %$subrecords) { # insert_into each role
       UNIVERSAL::isa($arrayref, 'ARRAY')
           or croak "Expected an arrayref for component role $role in $class";
+      next if not @$arrayref;
       my $meth = "insert_into_$role";
       $self->$meth(@$arrayref);
       $self->{$role} = $arrayref;
