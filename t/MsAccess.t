@@ -4,7 +4,10 @@ no warnings 'uninitialized';
 use DBI;
 use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
-use Test::More tests => 3;
+use constant N_DBI_MOCK_TESTS => 2;
+use constant N_BASIC_TESTS    => 1;
+
+use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
 
 sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
 
@@ -46,7 +49,8 @@ BEGIN {use_ok("DBIx::DataModel");}
 SKIP: {
   my $dbh;
   eval {$dbh = DBI->connect('DBI:Mock:', '', '', {RaiseError => 1})};
-  skip "DBD::Mock does not seem to be installed", 4 if $@ or not $dbh;
+  skip "DBD::Mock does not seem to be installed", N_DBI_MOCK_TESTS
+    if $@ or not $dbh;
 
 
   sub sqlLike { # closure on $dbh
