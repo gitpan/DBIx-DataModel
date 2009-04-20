@@ -5,7 +5,7 @@ use DBI;
 use Data::Dumper;
 use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
-use constant N_DBI_MOCK_TESTS => 90;
+use constant N_DBI_MOCK_TESTS => 92;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
@@ -302,6 +302,10 @@ die_ok {$emp->emp_id};
   delete $emp->{activities};
 
 
+  # empty foreign key
+  my $fake_emp = bless {}, 'HR::Employee';
+  die_ok {$fake_emp->activities()};
+
   # unbless
  SKIP: {
     eval "use Acme::Damn; 1"
@@ -340,6 +344,11 @@ die_ok {$emp->emp_id};
           .          ') AND emp_id = ? )',
           [qw/bar foo 123 456 999/], "combined where, arrayrefs");
 
+
+  # select with OR through an arrayref
+  my $result = HR::Employee->select(-where => [foo => 1, bar => 2]);
+  sqlLike('SELECT * FROM T_Employee WHERE foo = ? OR bar = ?',
+          [qw/1 2/], "where arrayref, OR");
 
   # select -resultAs => 'flat_arrayref'
   SKIP : {
@@ -533,6 +542,7 @@ die_ok {$emp->emp_id};
   # stepwise statement prepare/execute
   $statement = HR::Employee->join(qw/activities department/);
   $statement->refine(-where => {gender => 'F'});
+  $statement->refine(-where => {gender => {'!=' => 'M'}});
   $statement->prepare;
   die_ok {$statement->next}; # statement is not executed yet
   my $row = $statement->execute($emp)->next;
@@ -540,7 +550,7 @@ die_ok {$emp->emp_id};
 	  'FROM t_activity ' .
 	  'INNER JOIN t_department ' .
 	  'ON t_activity.dpt_id=t_department.dpt_id ' .
-	  'WHERE (emp_id = ? AND gender = ?)', [999, 'F'], 
+	  'WHERE (emp_id = ? AND gender = ? AND gender != ?)', [999, 'F', 'M'],
 	  'statement prepare/execute');
 
 

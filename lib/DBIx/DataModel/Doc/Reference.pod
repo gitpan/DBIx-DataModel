@@ -1280,8 +1280,8 @@ L<statement|DBIx::DataModel::Doc::Glossary/statement> :
                              -pageIndex   => $pageIndex,
                              -columnTypes => \%columnTypes,
                              -resultAs  => 'rows'      || 'firstrow' 
-                                        || 'flat_arrayref'
-                                        || 'sth'       || 'sql'
+                                        || 'subquery'  || 'flat_arrayref' 
+                                        || 'sth'       || 'sql' 
                                         || 'statement' || 'fast_statement');
   
   $all_records = $target->select();

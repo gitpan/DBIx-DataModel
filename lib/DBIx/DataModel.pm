@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '1.12';
+our $VERSION = '1.14';
 
 sub Schema {
   my $class = shift;

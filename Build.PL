@@ -11,7 +11,7 @@ my $builder = Module::Build->new(
         'Test::More'    => 0,
 	'Carp'          => 0,
 	'DBI'           => 0,
-	'SQL::Abstract' => 1.50,
+	'SQL::Abstract' => 1.51,
 	'Module::Build' => 0,
     },
     recommends => {

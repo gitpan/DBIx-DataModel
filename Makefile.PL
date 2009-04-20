@@ -8,7 +8,7 @@ WriteMakefile
                            'Carp' => 0,
                            'DBI' => 0,
                            'Module::Build' => 0,
-                           'SQL::Abstract' => '1.5',
+                           'SQL::Abstract' => '1.51',
                            'Test::More' => 0
                          },
           'INSTALLDIRS' => 'site',

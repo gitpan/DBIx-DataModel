@@ -9,7 +9,7 @@ use warnings;
 use strict;
 use Carp;
 use base 'DBIx::DataModel::Base';
-use SQL::Abstract 1.50;
+use SQL::Abstract 1.51;
 use DBIx::DataModel::Table;
 use DBIx::DataModel::View;
 use POSIX        (); # INT_MAX

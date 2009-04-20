@@ -758,7 +758,7 @@ sub _add_conditions { # merge conditions for L<SQL::Abstract/where>
       }
     }
     elsif (isa $cond, 'ARRAY') {
-      $merged{-nest} = $merged{-nest} ? [-and => $merged{-nest}, $cond]
+      $merged{-nest} = $merged{-nest} ? {-and => [$merged{-nest}, $cond]}
                                       : $cond;
     }
     elsif ($cond) {

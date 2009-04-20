@@ -1,5 +1,11 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.14 20.04.2009
+  - bug fix on adaptations for SQL::Abstract v1.51 (select(-where => [...]))
+
+v1.13 08.04.2009
+  - adaptations for SQL::Abstract v1.51 (syntax change for -and/-or)
+
 v1.12 17.03.2009
   - stupid error in count of SKIP tests (MsAccess.t) when DBD::Mock is absent
 
