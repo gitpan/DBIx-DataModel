@@ -925,7 +925,7 @@ sub initial_error {
 
 sub rollback_errors {
   my $self = shift;
-  return @$self[1..$#{@$self}];
+  return @$self[1..$#{$self}];
 }
 
 

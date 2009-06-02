@@ -993,3 +993,6 @@ a future release C<DBIx::DataModel> :
     array
   - refine(-orderBy => ..) should add to the ordering
   - warn about missing FK in object when trying to follow a join
+  - reflection methods (list of roles, etc.)
+  - update with subtrees (insert/update on dependent records. Quid: delete?)
+  - auto-unjoin (API for partioning columns into subobjects).

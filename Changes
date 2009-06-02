@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.15 02.06.2009
+  - bug fix on reporting rollback exceptions
+
 v1.14 20.04.2009
   - bug fix on adaptations for SQL::Abstract v1.51 (select(-where => [...]))
 
