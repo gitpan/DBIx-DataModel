@@ -543,30 +543,28 @@ sub Autoload { # forward to Source so that Tables and Views inherit it
 sub dbh {
   my ($class, $dbh, %dbh_options) = @_;
   my $classData = $class->classData;
+
   if ($dbh) {
+
+    # also support syntax ->dbh([$dbh, %dbh_options])
+    ($dbh, %dbh_options) = @$dbh if ref $dbh eq 'ARRAY' && ! keys %dbh_options;
+
     # forbid change of dbh while doing a transaction
-    not $classData->{dbh} or $classData->{dbh}->{AutoCommit}
+    not $classData->{dbh} or $classData->{dbh}[0]{AutoCommit}
       or croak "cannot change dbh(..) while in a transaction";
 
+    # $dbh must be a database handle
+    $dbh->isa('DBI::db')
+      or croak "invalid dbh argument";
+
+    # only accept $dbh with RaiseError set
+    $dbh->{RaiseError} 
+      or croak "arg to dbh(..) must have RaiseError=1";
+
     # store the dbh
-    $classData->{dbh}         = $class->_check_valid_dbh($dbh);
-    $classData->{dbh_options} = \%dbh_options;
+    $classData->{dbh} = [$dbh, %dbh_options];
   }
-  return wantarray ? ($classData->{dbh}, %{$classData->{dbh_options} || {}})
-                   : $classData->{dbh};
-}
-
-
-sub _check_valid_dbh {
-  my ($class, $dbh) = @_;
-
-  $dbh and $dbh->isa('DBI::db')
-    or croak "invalid dbh argument";
-
-  # only accept $dbh with RaiseError set
-  $dbh->{RaiseError} 
-    or croak "arg to dbh(..) must have RaiseError=1";
-  return $dbh;
+  return wantarray ? (@{$classData->{dbh}}) : $classData->{dbh}[0];
 }
 
 
@@ -639,7 +637,7 @@ sub views {
 
 
 
-my @default_state_components = qw/dbh dbh_options debug selectImplicitlyFor 
+my @default_state_components = qw/dbh debug selectImplicitlyFor 
                                   dbiPrepareMethod statementClass/;
 
 sub localizeState {
@@ -656,19 +654,21 @@ sub localizeState {
 
 
 sub doTransaction { 
-  my ($class, $coderef, $new_dbh, %new_dbh_options) = @_; 
+  my ($class, $coderef, @new_dbh) = @_; 
 
   my $classData        = $class->classData;
   my $transaction_dbhs = $classData->{transaction_dbhs} ||= [];
 
   # localize the dbh and its options, if so requested. 
-  my $local_state = $class->localizeState(qw/dbh dbh_options/)
-    and ($classData->{dbh},                  $classData->{dbh_options})
-      = ($class->_check_valid_dbh($new_dbh), \%new_dbh_options        )
-    if $new_dbh; # postfix "if" because $local_state must not be in a block
+  my $local_state = $class->localizeState(qw/dbh/)
+    and 
+        delete($classData->{dbh}), # cheat so that dbh() does not complain
+        $class->dbh(@new_dbh)      # and now update the dbh
+    if @new_dbh; # postfix "if" because $local_state must not be in a block
 
   # check that we have a dbh
-  $classData->{dbh} or croak "no database handle for transaction";
+  my $dbh = $classData->{dbh}[0]
+    or croak "no database handle for transaction";
 
   # how to call and how to return will depend on context
   my $want = wantarray ? "array" : defined(wantarray) ? "scalar" : "void";
@@ -686,9 +686,9 @@ sub doTransaction {
 
   my $begin_work_and_exec = sub {
     # make sure dbh is in transaction mode
-    if ($classData->{dbh}{AutoCommit}) {
-      $classData->{dbh}->begin_work; # will set AutoCommit to false
-      push @$transaction_dbhs, $classData->{dbh};
+    if ($dbh->{AutoCommit}) {
+      $dbh->begin_work; # will set AutoCommit to false
+      push @$transaction_dbhs, $dbh;
     }
 
     # do the real work
@@ -701,7 +701,7 @@ sub doTransaction {
   else { # else try to execute and commit in an eval block
     eval {
       # check AutoCommit state
-      $classData->{dbh}{AutoCommit}
+      $dbh->{AutoCommit}
         or croak "dbh was not in Autocommit mode before initial transaction";
 
       # execute the transaction
@@ -889,9 +889,16 @@ sub new {
 
 sub DESTROY { # called when the guard goes out of scope
   my ($self) = @_;
-  my ($schema, $state) = @$self;
-  my $classData = $schema->classData;
-  $classData->{$_} = $state->{$_} foreach keys %$state;
+  my ($schema, $previous_state) = @$self;
+
+  # must cleanup dbh so that ->dbh(..) does not complain if in a transaction
+  if (exists $previous_state->{dbh}) {
+    my $classData = $schema->classData;
+    delete $classData->{dbh};
+  }
+
+  # invoke "setter" method on each state component
+  $schema->$_($previous_state->{$_}) foreach keys %$previous_state;
 }
 
 

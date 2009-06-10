@@ -958,6 +958,7 @@ L<join()|/"join">.
 
   my $dbh = DBI::connect(...);
   MySchema->dbh($dbh, %options);        # set
+  MySchema->dbh([$dbh, %options]);      # set, alternative syntax
 
   my $dbh             = MySchema->dbh;  # get back just the dbh
   my ($dbh, %options) = MySchema->dbh;  # get back all
