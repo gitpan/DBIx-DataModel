@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.17 10.06.2009
+  - treat case when $schema->dbh is undef
+
 v1.16 10.06.2009
   - doTransaction properly calls dbh() instead of direct access to classData
   - localizeState properly calls setter methods when restoring previous state

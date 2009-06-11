@@ -564,7 +564,9 @@ sub dbh {
     # store the dbh
     $classData->{dbh} = [$dbh, %dbh_options];
   }
-  return wantarray ? (@{$classData->{dbh}}) : $classData->{dbh}[0];
+
+  my $return_dbh = $classData->{dbh} || [];
+  return wantarray ? @$return_dbh : $return_dbh->[0];
 }
 
 
