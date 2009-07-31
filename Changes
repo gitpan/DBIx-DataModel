@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.18 31.07.2009
+  - added missing "use DBI" in Schema::Generator
+  - added Schema methods 'table' and 'view'
+  - more liberal in _createPackage, just check not clobbering @ISA
+
 v1.17 10.06.2009
   - treat case when $schema->dbh is undef
 

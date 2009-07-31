@@ -630,11 +630,27 @@ sub tables {
 }
 
 
+sub table {
+  my ($class, $moniker) = @_;
+
+  # prepend schema name in table name, unless table already contains "::"
+  $moniker = $class . "::" . $moniker unless $moniker =~ /::/;
+  return $moniker;
+}
+
+
 sub views {
   my $class = shift;
   return @{$class->classData->{views}};
 }
 
+sub view {
+  my ($class, $moniker) = @_;
+
+  # prepend schema name in table name, unless table already contains "::"
+  $moniker = $class . "::" . $moniker unless $moniker =~ /::/;
+  return $moniker;
+}
 
 
 
@@ -766,8 +782,10 @@ sub _createPackage {
   my ($schema, $pckName, $isa_arrayref) = @_;
   no strict 'refs';
 
-  !(%{$pckName.'::'}) or croak "package $pckName is already defined";
-  @{$pckName."::ISA"} = @$isa_arrayref;
+  # !(%{$pckName.'::'}) or croak "package $pckName is already defined";
+  my $isa = $pckName."::ISA";
+  not defined  @{$isa} or croak "won't overwrite $isa";
+  @{$isa} = @$isa_arrayref;
   return $pckName;
 }
 
@@ -986,7 +1004,11 @@ This module implements
 
 =item L<tables|DBIx::DataModel::Doc::Reference/tables>
 
+=item L<table|DBIx::DataModel::Doc::Reference/table>
+
 =item L<views|DBIx::DataModel::Doc::Reference/views>
+
+=item L<view|DBIx::DataModel::Doc::Reference/view>
 
 =item L<localizeState|DBIx::DataModel::Doc::Reference/localizeState>
 

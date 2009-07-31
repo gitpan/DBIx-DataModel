@@ -11,7 +11,7 @@ no warnings 'uninitialized';
 use Carp;
 use List::Util   qw/max/;
 use Exporter     qw/import/;
-
+use DBI;
 
 our @EXPORT = qw/fromDBIxClass fromDBI/;
 
@@ -460,9 +460,9 @@ subclass that will be generated (default is C<My::Schema>).
 
 =head2 fromDBI
 
-  $generator->fromDBI(@dbi_connexion_args);
+  $generator->fromDBI(@dbi_connection_args);
   # or
-  fromDBI(@dbi_connexion_args);
+  fromDBI(@dbi_connection_args);
 
 Connects to a L<DBI|DBI> data source, gathers information from the
 database about tables, primary and foreign keys, and generates
