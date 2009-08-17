@@ -12,7 +12,7 @@ use UNIVERSAL       qw/isa/;
 use Storable        qw/dclone/;
 use POSIX           qw/INT_MAX/;
 
-use overload 
+use overload
 
   # overload the coderef operator ->() for backwards compatibility
   # with previous "selectFromRoles" method. 
@@ -1137,7 +1137,7 @@ redefined in subclasses :
 
 =head1 AUTHOR
 
-Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
+Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 

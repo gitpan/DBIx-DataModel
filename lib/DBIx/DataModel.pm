@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '1.18';
+our $VERSION = '1.19';
 
 sub Schema {
   my $class = shift;
@@ -22,7 +22,7 @@ __END__
 
 =head1 NAME
 
-DBIx::DataModel - Classes and UML-style Associations on top of DBI
+DBIx::DataModel - UML-based Object-Relational Mapping (ORM) framework
 
 =head1 SYNOPSIS
 
@@ -145,16 +145,17 @@ See L<DBIx::DataModel::Schema::Generator>.
 Search employees whose name starts with 'D'
 (select API is taken from L<SQL::Abstract>)
 
-  my $empl_D 
-    = MySchema::Employee->select(-where => {lastname => {-like => 'D%'}});
+  my $empl_D = MySchema::Employee->select(
+    -where => {lastname => {-like => 'D%'}}
+  );
 
 idem, but we just want a subset of the columns, and order by age.
 
-  my $empl_F 
-     = MySchema::Employee->select(
-                        -columns => [qw/firstname lastname d_birth/],
-                        -where   => {lastname => {-like => 'F%'}},
-                        -orderBy => 'd_birth');
+  my $empl_F = MySchema::Employee->select(
+    -columns => [qw/firstname lastname d_birth/],
+    -where   => {lastname => {-like => 'F%'}},
+    -orderBy => 'd_birth'
+  );
 
 Print some info from employees. Because of the
 'fromDB' handler associated with column type 'date', column 'd_birth'
@@ -519,17 +520,29 @@ objects from L<Storable/thaw>. This should be totally harmless unless
 you do some very special things with C<@INC>.
 
 
+=head1 SUPPORT AND CONTACT
+
+Bugs should be reported via the CPAN bug tracker at
+L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=DBIx-DataModel>.
+
+There is a discussion group at 
+L<http://groups.google.com/group/dbix-datamodel>.
+
+Sources are stored in an open repository at 
+L<http://svn.ali.as/cpan/trunk/DBIx-DataModel>.
+
 =head1 AUTHOR
 
-Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
+Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanks to Cedric Bouvier for some bug fixes and improvements.
+Thanks to Cedric Bouvier for some bug fixes and improvements, and to
+Terrence Brannon for many fixes in the documentation.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006, 2008 by Laurent Dami.
+Copyright 2006-2009 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 

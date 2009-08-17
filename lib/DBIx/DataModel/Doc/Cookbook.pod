@@ -61,7 +61,7 @@ the database into a Perl object :
 
   # declare column type
   use Date::Simple;
-  MySchema->ColumnType(Date_simple => 
+  $schema->ColumnType(Date_simple => 
     fromDB => sub {Date::Simple->new($_[0]) if $_[0] },
     toDB   => sub {$_[0] = $_[0]->as_str    if $_[0] },
   );
@@ -157,7 +157,7 @@ with some external modules like L<JSON> that croaks when encoding
 a blessed reference. In that case you can use the C<unbless> function
 
   foreach my $row (@$rows) {
-    MySchema->unbless($row);
+    $schema->unbless($row);
     print to_json($row);
   }
 
@@ -175,22 +175,22 @@ SQL.
 
   # anonymous sub containing the work to do
   my $to_do = sub {
-    MySchema::Table1->insert(...);
-    MySchema::Table2->delete(...);
-  }
+    $table1->insert(...);
+    $table2->delete(...);
+  };
   # so far nothing has happened in the database
   
   # now do the transaction
-  MySchema->doTransaction($to_do);
+  $schema->doTransaction($to_do);
 
 =head2 Nested transaction
 
-  MySchema->doTransaction(sub {
+  $schema->doTransaction(sub {
     do_something;
-    MySchema->doTransaction(sub { 
+    $schema->doTransaction(sub { 
       some_nested_code();
     });
-    MySchema->doTransaction(sub { 
+    $schema->doTransaction(sub { 
       some_other_nested_code();
    });
   });

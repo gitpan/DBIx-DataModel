@@ -197,6 +197,24 @@ Since associations are symmetric, the two arrayrefs in the
 C<Association> declaration could as well be given in the reverse 
 order, yielding exactly the same effect.
 
+=head3 Choosing role names
+
+Technically, a role name can be any valid Perl identifier, so it
+can be chosen arbitrarily; however, in most cases it is a good
+idea to take the name of the associated table : this will make it
+easier to follow method calls and joins that navigate between
+tables. In addition, it is also a good idea to use role names
+in I<singular> when the multiplicity is 1, and in I<plural> when
+the multiplicity is greater than 1, again for readability reasons.
+
+One exception to this recommendation is when there are several
+associations between the same tables, in which case role names
+are precisely useful to make the distinction. For example,
+suppose that each department has offices in one or several buildings,
+and has its address in one building: this could be modeled with 
+one pair of roles C<office_buildings> / C<departments_using>, and
+one other pair of roles C<address_building> / C<departments_addressed_at>.
+
 
 =head2 Compositions
 
@@ -257,26 +275,36 @@ connection :
 Now we can start populating the database:
 
   my ($bach_id, $berlioz_id, $monteverdi_id) = 
+    HR::Employee->insert([qw/ firstname    lastname   /],
+                         [qw/ Johann       Bach       /],
+                         [qw/ Hector       Berlioz    /],
+                         [qw/ Claudio      Monteverdi /]);
+
+This form of C<insert()>, supplying a list of arrayrefs with column names
+in the first arrayref, is convenient for inserting a bunch of rows at
+once. The other form is to supply one or several hashrefs, where each
+hashref corresponds to a record to create, and yields the same result :
+
     HR::Employee->insert({firstname => "Johann",  lastname => "Bach"      },
                          {firstname => "Hector",  lastname => "Berlioz"   },
                          {firstname => "Claudio", lastname => "Monteverdi"});
 
-Observe that several rows can be created at once (of course you get the
-same result by calling C<insert()> several times). According to our
-earlier assumptions, keys are generated automatically within the 
-database, so they need not be supplied here. The return value of the 
-method is the list of generated ids (provided that your database driver
-supports DBI's L<last_insert_id|DBI/last_insert_id> method).
+According to our earlier assumptions, keys are generated automatically
+within the database, so they need not be supplied here. The return
+value of the method is the list of generated ids (provided that your
+database driver supports DBI's L<last_insert_id|DBI/last_insert_id>
+method).
 
-Similarly, we create some departments and skills (here with 
-explicit primary keys) :
+Similarly, we create some departments and skills
+(here with explicit primary keys, and using both insertion syntaxes) :
 
   HR::Department->insert({dpt_code => "CPT",  dpt_name => "Counterpoint" },
 			 {dpt_code => "ORCH", dpt_name => "Orchestration"});
 
-  HR::Skills->insert({skill_code => "VL",  skill_name => "Violin"  },
-                     {skill_code => "KB",  skill_name => "Keyboard"},
-                     {skill_code => "GT",  skill_name => "Guitar"},
+  HR::Skill->insert([qw/ skill_code  skill_name /],
+                    [qw/ VL          Violin     /],
+                    [qw/ KB          Keyboard   /],
+                    [qw/ GT          Guitar     /]);
 
 To perform updates, there is either a class method or an object method.
 Here is an example with the class method :

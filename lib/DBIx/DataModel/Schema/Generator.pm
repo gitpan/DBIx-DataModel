@@ -498,7 +498,7 @@ Implementation of L<SQL::Translator::Producer|SQL::Translator::Producer>.
 
 =head1 AUTHOR
 
-Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
+Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 
 =head1 COPYRIGHT & LICENSE
 

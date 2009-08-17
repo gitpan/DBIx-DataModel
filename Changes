@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.19 17.08.2009
+  - insert(..) now accepts a list of arrayrefs (kind of 'populate' method)
+  - fixes in the doc (thanks to Terrence Brannon for many suggestions)
+  - announce discussion group @ googlegroups & public source @ svn.ali.as
+  
 v1.18 31.07.2009
   - added missing "use DBI" in Schema::Generator
   - added Schema methods 'table' and 'view'

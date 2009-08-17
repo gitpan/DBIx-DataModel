@@ -5,7 +5,7 @@ use DBI;
 use Data::Dumper;
 use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
-use constant N_DBI_MOCK_TESTS => 92;
+use constant N_DBI_MOCK_TESTS => 95;
 use constant N_BASIC_TESTS    => 15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
@@ -58,9 +58,9 @@ die_ok {HR::Employee->Table(Foo    => T_Foo => qw/foo_id/)};
 
 
   HR->Composition([qw/Employee   employee   1 /],
-                        [qw/Activity   activities * /])
-          ->Association([qw/Department department 1 /],
-                        [qw/Activity   activities * /]);
+                  [qw/Activity   activities * /])
+    ->Association([qw/Department department 1 /],
+                  [qw/Activity   activities * /]);
 
 ok(HR::Activity->can("employee"),   'Association 1');
 ok(HR::Employee->can("activities"), 'Association 2');
@@ -99,8 +99,8 @@ is_deeply([HR::Employee->noUpdateColumns],
   HR::Employee->AutoExpand(qw/activities/);
 
   $emp = HR::Employee->blessFromDB({firstname => 'Joseph',
-                                lastname  => 'BODIN DE BOISMORTIER',
-                                d_birth   => '1775-12-16'});
+                                    lastname  => 'BODIN DE BOISMORTIER',
+                                    d_birth   => '1775-12-16'});
   $emp->applyColumnHandler('normalizeName');
 
 is($emp->{d_birth}, '16.12.1775', 'fromDB handler');
@@ -378,7 +378,19 @@ die_ok {$emp->emp_id};
           [1950, 1980],
          'subquery');
 
-  # insertion 
+  # plain insertion using arrayref syntax
+  my ($bach_id, $berlioz_id, $monteverdi_id) = 
+    HR::Employee->insert([qw/ firstname    lastname   /],
+                         [qw/ Johann       Bach       /],
+                         [qw/ Hector       Berlioz    /],
+                         [qw/ Claudio      Monteverdi /]);
+  my $insert_sql = 'INSERT INTO T_Employee (firstname, lastname) VALUES (?, ?)';
+  sqlLike($insert_sql, [qw/ Johann       Bach       /],
+          $insert_sql, [qw/ Hector       Berlioz    /],
+          $insert_sql, [qw/ Claudio      Monteverdi /],
+          'insert with arrayref syntax');
+
+  # insertion into related class
   $emp->insert_into_activities({d_begin =>'2000-01-01', d_end => '2000-02-02'});
   sqlLike('INSERT INTO t_activity (d_begin, d_end, emp_id) ' .
             'VALUES (?, ?, ?)', ['2000-01-01', '2000-02-02', 999],
@@ -386,7 +398,6 @@ die_ok {$emp->emp_id};
 
 
   # test cascaded inserts
-
   my $tree = {firstname  => "Johann Sebastian",  
               lastname   => "Bach",
               activities => [{d_begin  => '01.01.1707',

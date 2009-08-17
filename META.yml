@@ -1,9 +1,9 @@
 ---
 name: DBIx-DataModel
-version: 1.18
+version: 1.19
 author:
   - 'Laurent Dami <laurent.dami AT etat.ge.ch>'
-abstract: Classes and UML-style Associations on top of DBI
+abstract: UML-based Object-Relational Mapping (ORM) framework
 license: perl
 resources:
   license: http://dev.perl.org/licenses/
@@ -19,7 +19,7 @@ recommends:
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 1.18
+    version: 1.19
   DBIx::DataModel::Base:
     file: lib/DBIx/DataModel/Base.pm
   DBIx::DataModel::Schema:

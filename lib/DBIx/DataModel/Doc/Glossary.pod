@@ -46,7 +46,9 @@ GLOSSARY
 
 =item API
 
-Application Programming Interface
+Application Programming Interface, the set of public attributes,
+methods, arguments, return values for interacting with a software 
+compnent.
 
 =item association
 

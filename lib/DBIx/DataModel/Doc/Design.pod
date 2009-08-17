@@ -179,18 +179,18 @@ taking care of the inner details.
 
 =head3 Polymorphic C<join>
 
-The C<join> method, when applied to a schema, 
+The C<join> method, when applied to a B<schema>, 
 is a class method that dynamically generates a view 
 (i.e. a new subclass of C<DBIx::DataModel::View>), 
 starting from a given class and then following the associations.
 
-When applied to a table or a view, 
+When applied to a B<table> or a B<view>, 
 C<join> is a class method that creates a statement to 
 query one or several associated tables.
 The statement contains a condition to restrict the results 
 according to the initial association.
 
-When applied to a data row (to an instance of a table or a view),
+When applied to a B<data row> (to an instance of a table or a view),
 C<join> is an instance method that works like the 
 class method (i.e. creates a statement), but in addition
 binds values of the current object to the appropriated
@@ -586,13 +586,13 @@ designed to closely reflect how they would be pictured
 in a Unified Modelling Language (UML) diagram. The general
 form is :
 
-  MySchema->Association([$class1, $role1, $multiplicity1, @columns1],
-                        [$class2, $role2, $multiplicity2, @columns2]);
+  $schema->Association([$class1, $role1, $multiplicity1, @columns1],
+                       [$class2, $role2, $multiplicity2, @columns2]);
 
 yielding for example the following declaration
 
-  MySchema->Association([qw/Department department 1 /],
-                        [qw/Activity   activities * /]);
+  $schema->Association([qw/Department department 1 /],
+                       [qw/Activity   activities * /]);
 
 
 which corresponds to UML diagram
@@ -649,9 +649,9 @@ If referential integrity rules are declared within the RDBMS, then
 there is some overlap with what is declared here on the Perl
 side. However, it would not be possible to automatically deduce all
 association information from database metadata, because the database
-does not know about role names and multiplicities. Therefore
-C<DBIx::DataModel> has no "loader" facility to automatically
-generate a schema.
+does not know about role names and multiplicities. A partial schema
+can be automatically generated using L<DBIx::DataModel::Schema::Generator>,
+but it usually needs some manual additions to be really useful.
 
 
 =head3 UML compositions for handling data trees
@@ -693,7 +693,7 @@ called when transfering  data from or to the database.
 Take for example the "Percent" column type shown in the  Synopsis :
 
   # 'percent' conversion between database (0.8) and user (80)
-  MySchema->ColumnType(Percent =>
+  $schema->ColumnType(Percent =>
      fromDB   => sub {$_[0] *= 100 if $_[0]},
      toDB     => sub {$_[0] /= 100 if $_[0]},
      validate => sub {$_[0] =~ /1?\d?\d/});
@@ -816,7 +816,7 @@ The client code can have fine control on statement preparation and
 execution, which is useful for writing efficient loops.
 For example, instead of writing 
 
-  my $list = MyTable->select(...);
+  my $list = My::Table->select(...);
   foreach my $obj (@$list) {
     my $related_rows = $obj->join(qw/role1 role2/)->select;
     ... 
@@ -840,7 +840,7 @@ like C<prepare> except that the statement handle returned is stored in
 a hash associated with the C<$dbh>. This can be exploited from 
 C<DBIx::DataModel> by stating 
 
-  MySchema->dbiPrepareMethod('prepare_cached');
+  $schema->dbiPrepareMethod('prepare_cached');
 
 =back
 
@@ -881,29 +881,43 @@ to change and deprecate half of the API.
 The philosophy of C<DBIx::DataModel> is that a record is nothing more
 than a blessed hashref, where hash keys are column names and hash
 values are column values.  So all information about schemas,
-relationships, connections, etc is indeed within a C<classData> hashref
-associated with each class. This class data is a global resource, and
-like other global resources in Perl (for example C<STDIN>, C<%ENV>, or
-special variables C<$/>, C<$,>, etc.), interference of several clients
-through the global state may be seen either as an advantage or as a
-disadvantage.  The advantage of a global resource is that it is
-immediately available to every component, without need for explicit
-parameter passing. The disadvantage is a risk of undesired
-interferences.
+relationships, connections, etc is indeed within a C<classData>
+hashref associated with each class. This class data is a global
+resource, and like with other global resources in Perl (for example
+C<STDIN>, C<%ENV>, or special variables C<$/>, C<$,>, etc.), several
+clients can interact through the global state.
 
+When used with care, interaction of several components through a
+global resource can be quite handy : for example C<STDIN> does not
+need to be explicitly passed to every component, it is always
+available; furthermore, C<STDIN> can be redirected at one specific
+place and all collaborating components will immediately change
+behaviour accordingly. However, this must be done with care, because
+there is also a risk of undesired "action at distance" --- maybe the
+other components wanted to continue reading from the real C<STDIN>,
+not the redirected one !
 
-To avoid unexpected interactions through the global state, Perl offers
+To avoid undesired interactions through the global state, Perl offers
 the C<local> construct, also known as I<dynamic scoping> (see
-L<perlsub>).  
-C<DBIx::DataModel> provides a very similar mechanism through the
-L<localizeState|DBIx::DataModel::Doc::Reference/localizeState> method : 
-state modifications can be limited to a specific scope, and then
-automatically restored to the previous state.  Furthermore, the
+L<perlsub>). Using that construct, a component can temporarily
+redirect C<STDIN>, for the duration of one specific computation, and
+then automatically restore it to its previous state.
+
+C<DBIx::DataModel> uses a similar approach. The database handle
+is stored in the schema class, and can be changed dynamically, 
+which will immediately affect all classes and objects related 
+to that schema. However, state modifications in schemas 
+can be limited to a specific scope through the
+L<localizeState|DBIx::DataModel::Doc::Reference/localizeState> method.
+Furthermore, the
 L<doTransaction|DBIx::DataModel::Doc::Reference/doTransaction> method
 takes an optional C<$dbh> argument to localize the transaction within
-a specific database handle.  With these methods, sane management of
-the global state should be quite easy.
-
+a specific database handle.
+With these methods, sane management of the global state is quite easy,
+and since nested transactions are supported, it is perfectly possible
+to program transactions with cross-database operations (copying objects
+from one database to another, or simultaneously performing the same
+insert or delete in several databases).
 
 Actually, localization is only needed for  C<Schema> subclasses, 
 that indeed hold a mutable global state
@@ -974,8 +988,6 @@ a future release C<DBIx::DataModel> :
   - 'validate' record handler (not only column handlers)
   - 'normalize' handler : for ex. transform empty string into null
   - walk through WHERE queries and apply 'toDB' handler (not obvious!)
-  - decide what to do with multiple inheritance of role methods in Views;
-    use NEXT ?
   - maybe it is not a good idea to modify data in place when 
     performing inserts or updates; should perhaps clone the arguments.
   - more extensive and more organized testing
@@ -992,7 +1004,6 @@ a future release C<DBIx::DataModel> :
   - pre/post callbacks: support arrays of handlers, refine(..) adds to the
     array
   - refine(-orderBy => ..) should add to the ordering
-  - warn about missing FK in object when trying to follow a join
   - reflection methods (list of roles, etc.)
   - update with subtrees (insert/update on dependent records. Quid: delete?)
   - auto-unjoin (API for partioning columns into subobjects).

@@ -96,7 +96,7 @@ DBIx::DataModel::View - Parent for View classes
 
 This is the parent class for all view classes created through
 
-  MySchema->View($classname, ...);
+  $schema->View($classname, ...);
 
 =head1 METHODS
 

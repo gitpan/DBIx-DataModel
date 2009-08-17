@@ -145,14 +145,34 @@ sub fetch_cached {
 }
 
 
-
 sub insert {
   my ($class, @records) = @_;
   not ref($class) or croak "insert() should be called as class method";
-  @records        or croak "missing arguments to insert()";
 
-  my @ids;
+  # if data is received as arrayrefs, transform it into a list of hashrefs.
+  # NOTE : this is kind of dumb; a more efficient implementation
+  # would be to prepare one single DB statement and then execute it on
+  # each data row, but that would require some refactoring of _singleInsert
+  # and _rawInsert.
+  if (ref $records[0] eq 'ARRAY') {
+    my $header_row = shift @records;
+    foreach my $data_row (@records) {
+      ref $data_row eq 'ARRAY' 
+        or croak "data row after a header row should be an arrayref";
+      @$data_row == @$header_row
+        or croak "number of items in data row not same as header row";
+      my %real_record;
+      @real_record{@$header_row} = @$data_row;
+      $data_row = \%real_record;
+    }
+  }
 
+  # check that there is at least one record to insert
+  @records or croak "insert(): not enough arguments";
+
+  my @ids; # to hold primary keys of inserted records
+
+  # insert each record, one by one
   foreach my $record (@records) {
     bless $record, $class;
     $record->applyColumnHandler('toDB');
@@ -172,7 +192,7 @@ sub insert {
   return @ids if wantarray;             # list context
   return      if not defined wantarray; # void context
   carp "insert({...}, {...}, ..) called in scalar context" if @records > 1;
-  return $ids[0];
+  return $ids[0];                       # scalar context
 }
 
 
@@ -375,7 +395,7 @@ DBIx::DataModel::Table - Parent for Table classes
 
 This is the parent class for all table classes created through
 
-  MySchema->Table($classname, ...);
+  $schema->Table($classname, ...);
 
 =head1 METHODS
 

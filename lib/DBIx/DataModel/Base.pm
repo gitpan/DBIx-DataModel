@@ -123,7 +123,7 @@ This module implements
 
 =head1 AUTHOR
 
-Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
+Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 

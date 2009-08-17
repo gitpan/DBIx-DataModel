@@ -70,9 +70,9 @@ datastructures for representing the elements of a database schema.
 For those methods, the return value is the classname again, so that 
 they can be chained :
 
-   MySchema->Table(...)
-           ->Table(...)
-           ->Association(...);
+   $schema->Table(...)
+          ->Table(...)
+          ->Association(...);
 
 Method names starting with a B<lowercase letter> are meant to be usual
 B<run-time methods>, either for classes or for instances; usually
@@ -184,12 +184,12 @@ The default is the question mark C<?>.
 
 =head2 Table
 
-  $schema->Table($pckName, $dbTable, @primKey);
+  $schema->Table($class, $dbTable, @primKey);
 
-Creates a new Perl class of name C<$pckName> that represents a 
+Creates a new Perl class of name C<$class> that represents a 
 database table. That class inherits from 
 C<DBIx::DataModel::Table>.
-If C<< $pckName >> contains no C<::>, then the schema name
+If C<< $class >> contains no C<::>, then the schema name
 is prepended to it (so the new table class is created in the namespace
 of the schema).
 C<< $dbTable >> should contain the name of the table in the database.
@@ -286,13 +286,17 @@ table.
 
 Declares an association between two tables (or even two instances of
 the same table), in a UML-like fashion. Each side of the association
-specifies its table, the "rolename" of of this table in the
+specifies its table, the "role name" of of this table in the
 association, the multiplicity, and the name of the column or list of
 columns that technically implement the association as a database
 join. 
 
 Role names should preferably be chosen so as to avoid
-conflicts with column names in the same table.
+conflicts with column names in the same table. Some
+recommendations are given in the 
+L<Quickstart section|DBIx::DataModel::Doc::Quickstart/"Choosing role names">.
+If several associations attempt to define the same role name in 
+the same table, an exception is generated.
 
 Multiplicities should be written in the UML form '0..*', '1..*',
 '0..1', etc. (minimum .. maximum number of occurrences); this will
@@ -435,19 +439,19 @@ The linking table needs to be declared first :
 
   $schema->Table(qw/link_table link_table prim_key1 prim_key2/);
 
-  $schema->Association([qw/table1     role1  0..1/],
-                       [qw/link_table links    * /]);
+  $schema->Association([qw/table1     role1       0..1/],
+                       [qw/link_table link_table  *   /]);
 
-  $schema->Association([qw/table2     role2  0..1/],
-                       [qw/link_table links    * /]);
+  $schema->Association([qw/table2     role2       0..1/],
+                       [qw/link_table link_table  *   /]);
 
 This describes a diagram like this :
 
-  +--------+               +-------+                 +--------+
-  |        | 0..1        * | Link  | *          0..1 |        |
-  | Table1 +---------------+  --   +-----------------+ Table2 |
-  |        | role1  linksA | Table | linksB    role2 |        |
-  +--------+               +-------+                 +--------+
+  +--------+                   +-------+                   +--------+
+  |        | 0..1            * | Link  | *            0..1 |        |
+  | Table1 +-------------------+  --   +-------------------+ Table2 |
+  |        | role1  link_table | Table | link_table  role2 |        |
+  +--------+                   +-------+                   +--------+
 
 Then we can declare the  many-to-many association, very much like
 ordinary associations, except that the last items in the argument
@@ -456,8 +460,8 @@ In the diagram above, we must follow roles C<linksA> and C<role2>
 in order to obtain the rows of C<Table2> related to an instance
 of C<Table1>; so we write
 
-  $schema->Association([qw/table1  roles1  *  linksB role1/],
-                       [qw/table2  roles2  *  linksA role2/]);
+  $schema->Association([qw/table1  roles1  *  link_table role1/],
+                       [qw/table2  roles2  *  link_table role2/]);
 
 which describes a diagram like this :
 
@@ -506,11 +510,21 @@ following methods :
 L</join>  (invoked on a Schema) : create a new C<View> that selects 
 from several tables, filling the joins automatically
 
+
 =item *
 
 L</join> (invoked on an instance of Table or View) :
 from a given object, follow a list of roles to get information
 from associated tables.
+
+=item * 
+
+L</join> (invoked on Table or View class) :
+from a given class, follow a list of roles to prepare getting information
+from associated tables; the result is a L<Statement|DBIx::DataModel::Statement>
+object that can be bound to specific members of the initial table
+and then can be selected.
+
 
 =item *
 
@@ -1689,11 +1703,21 @@ plain datastructures; this is the case for example with L<YAML::Syck/Dump>.
 
   my @ids = $table->insert({col1 => $val1, col2 => $val2, ...}, 
                            {...});
+  # or
+  my @ids = $table->insert([qw/ col1   col2   .../],
+                           [    $val1, $val2, ... ],
+                           ...);
 
-Applies the C<toDB> handlers, removes the C<noUpdate> columns, 
-and then inserts the new records into the database.
-Because of the handlers, this operation I<may modify the argument data>, 
-so it is not safe to access C<$val1>, C<$val2>, etc. after the call.
+Inserts a collection of rows into the database, given
+either as a list of hashrefs, or as a first arrayref containing
+the column names, followed by a list of arrayrefs containing
+values for each row to be inserted.
+
+In either form, the method applies the C<toDB> handlers, removes the
+C<noUpdate> columns, and then inserts the new records into the
+database.  Because of the handlers, this operation I<may modify the
+argument data>, so it is not safe to access C<$val1>, C<$val2>,
+etc. after the call.
 
 Primary key column(s) should of course be present 
 in the supplied hashrefs, unless the the key is auto-generated.
