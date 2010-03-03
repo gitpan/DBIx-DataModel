@@ -3,11 +3,12 @@ package DBIx::DataModel;
 #----------------------------------------------------------------------
 # see POD doc at end of file
 
+use 5.006;
 use warnings;
 use strict;
 use DBIx::DataModel::Schema;
 
-our $VERSION = '1.19';
+our $VERSION = '1.21';
 
 sub Schema {
   my $class = shift;
@@ -103,9 +104,7 @@ filled automatically by the database)
 =head3 Additional methods
 
 For details that could not be expressed in a declarative way,
-just add a new method into the table class (but in that case,
-Schema and Table declarations should be in a BEGIN block, so that
-the table class is defined before you start adding methods to it).
+just add a new method into the table class :
 
   package MySchema::Activity; 
   

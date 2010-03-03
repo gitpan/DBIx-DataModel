@@ -1,3 +1,4 @@
+use 5.006;
 use strict;
 use warnings;
 use Module::Build;
@@ -8,11 +9,18 @@ my $builder = Module::Build->new(
     dist_author         => 'Laurent Dami <laurent.dami AT etat.ge.ch>',
     dist_version_from   => 'lib/DBIx/DataModel.pm',
     requires => {
+        'perl'          => 5.006,
         'Test::More'    => 0,
 	'Carp'          => 0,
 	'DBI'           => 0,
 	'SQL::Abstract' => 1.51,
 	'Module::Build' => 0,
+    'Acme::Damn'    => 0,
+    'Scalar::Util'  => 0,
+	'Storable'      => 0,
+    },
+    build_requires => {
+        'Task::Weaken'  => 0,
     },
     recommends => {
         'DBD::Mock'                   => 0,
