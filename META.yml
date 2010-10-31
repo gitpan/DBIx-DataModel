@@ -1,33 +1,21 @@
 ---
-name: DBIx-DataModel
-version: 1.25
+abstract: 'UML-based Object-Relational Mapping (ORM) framework'
 author:
   - 'Laurent Dami <laurent.dami AT etat.ge.ch>'
-abstract: UML-based Object-Relational Mapping (ORM) framework
-license: perl
-resources:
-  license: http://dev.perl.org/licenses/
 build_requires:
   Task::Weaken: 0
-requires:
-  Acme::Damn: 0
-  Carp: 0
-  DBI: 0
-  Module::Build: 0
-  SQL::Abstract: 1.61
-  Scalar::Util: 0
-  Storable: 0
-  Test::More: 0
-  perl: 5.006
-recommends:
-  DBD::Mock: 0
-  Lingua::EN::Inflect::Number: 0
 configure_requires:
-  Module::Build: 0.35
+  Module::Build: 0.36
+generated_by: 'Module::Build version 0.3607'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 1.25
+    version: 1.26
   DBIx::DataModel::Base:
     file: lib/DBIx/DataModel/Base.pm
   DBIx::DataModel::Schema:
@@ -44,7 +32,19 @@ provides:
     file: lib/DBIx/DataModel/Table.pm
   DBIx::DataModel::View:
     file: lib/DBIx/DataModel/View.pm
-generated_by: Module::Build version 0.350001
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+recommends:
+  DBD::Mock: 0
+  Lingua::EN::Inflect::Number: 0
+requires:
+  Acme::Damn: 0
+  Carp: 0
+  DBI: 0
+  Module::Build: 0
+  SQL::Abstract: 1.61
+  Scalar::Util: 0
+  Storable: 0
+  Test::More: 0
+  perl: 5.006
+resources:
+  license: http://dev.perl.org/licenses/
+version: 1.26
