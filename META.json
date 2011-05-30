@@ -1,0 +1,90 @@
+{
+   "abstract" : "UML-based Object-Relational Mapping (ORM) framework",
+   "author" : [
+      "Laurent Dami <laurent.dami AT etat.ge.ch>"
+   ],
+   "dynamic_config" : 1,
+   "generated_by" : "Module::Build version 0.38, CPAN::Meta::Converter version 2.110930",
+   "license" : [
+      "perl_5"
+   ],
+   "meta-spec" : {
+      "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
+      "version" : "2"
+   },
+   "name" : "DBIx-DataModel",
+   "prereqs" : {
+      "build" : {
+         "requires" : {
+            "Task::Weaken" : 0
+         }
+      },
+      "configure" : {
+         "requires" : {
+            "Module::Build" : "0.38"
+         }
+      },
+      "runtime" : {
+         "recommends" : {
+            "DBD::Mock" : 0,
+            "Lingua::EN::Inflect::Number" : 0
+         },
+         "requires" : {
+            "Acme::Damn" : 0,
+            "Carp" : 0,
+            "DBI" : 0,
+            "Module::Build" : 0,
+            "SQL::Abstract" : "1.61",
+            "Scalar::Util" : 0,
+            "Storable" : 0,
+            "Test::More" : 0,
+            "perl" : "5.006"
+         }
+      }
+   },
+   "provides" : {
+      "DBIx::DataModel" : {
+         "file" : "lib/DBIx/DataModel.pm",
+         "version" : "1.27"
+      },
+      "DBIx::DataModel::Base" : {
+         "file" : "lib/DBIx/DataModel/Base.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Schema" : {
+         "file" : "lib/DBIx/DataModel/Schema.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Schema::Generator" : {
+         "file" : "lib/DBIx/DataModel/Schema/Generator.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Source" : {
+         "file" : "lib/DBIx/DataModel/Source.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Statement" : {
+         "file" : "lib/DBIx/DataModel/Statement.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Statement::JDBC" : {
+         "file" : "lib/DBIx/DataModel/Statement/JDBC.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::Table" : {
+         "file" : "lib/DBIx/DataModel/Table.pm",
+         "version" : 0
+      },
+      "DBIx::DataModel::View" : {
+         "file" : "lib/DBIx/DataModel/View.pm",
+         "version" : 0
+      }
+   },
+   "release_status" : "stable",
+   "resources" : {
+      "license" : [
+         "http://dev.perl.org/licenses/"
+      ]
+   },
+   "version" : "1.27"
+}
