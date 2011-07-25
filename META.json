@@ -45,7 +45,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "1.28"
+         "version" : "1.29"
       },
       "DBIx::DataModel::Base" : {
          "file" : "lib/DBIx/DataModel/Base.pm",
@@ -86,5 +86,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "1.28"
+   "version" : "1.29"
 }
