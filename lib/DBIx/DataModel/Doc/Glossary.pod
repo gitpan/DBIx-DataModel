@@ -59,7 +59,12 @@ and optionally gives names to the association itself and to the
 roles of the partipating tables.
 An association declaration in C<DBIx::DataModel> involves similar 
 information, except that no more than two tables can participate,
-and role names are mandatory.
+and at least one role name is mandatory.
+
+=item component
+
+=item composite
+
 
 =item composition
 

@@ -1,5 +1,13 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.99_01
+  MAJOR REVISION, see Doc/Delta_2.0.pod
+  - new metaclass / reflection layer
+  - use base ==> use parent
+  - deprecated Autoload()
+  - removed keepLasth, lasth
+  - dropped support for positional args to select()
+
 v1.29 25.07.2011
   - fixed limit/offset in Statement::JDBC (old bug never discovered!)
 

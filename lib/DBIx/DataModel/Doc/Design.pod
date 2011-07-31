@@ -5,6 +5,14 @@ DBIx::DataModel::Doc::Design - Architecture and design principles
 
 =head1 DOCUMENTATION CONTEXT
 
+B<WARNING> : Version 2 of C<DBIx::DataModel> is a major refactoring
+from versions 1.*, with a number of incompatible changes in the API
+(classes renamed, arguments renamed or reorganized, etc. -- see
+L<DBIx::DataModel::Doc::Delta_2.0>). The documentation below has not
+been fully updated yet to reflect these changes.
+
+
+
 This chapter is part of the C<DBIx::DataModel> manual.
 
 
@@ -44,7 +52,7 @@ L<GLOSSARY|DBIx::DataModel::Doc::Glossary>
 This chapter covers the basic architecture of C<DBIx::DataModel>,
 and the main motivating principles for proposing yet
 another ORM. Read it if you are currently evaluating whether
-C<DBIx::DataModel> is suitable for your context, or if you want to 
+C<DBIx::DataModel> is suitable for your context, or if you want to
 globally understand how it works. Skip it and jump to
 the L<QUICKSTART|DBIx::DataModel::Doc::Quickstart> chapter if you want
 to directly start using the framework.
@@ -56,13 +64,13 @@ to directly start using the framework.
 
 The following picture shows the class hierarchy :
 
-                                  FRAMEWORK CLASSES
-                                  =================
-  
+         FRAMEWORK CLASSES
+         =================
+
    +-----------------+               +----------------------------+
    | DBIx::DataModel |               | DBIx::DataModel::Statement |
    +-----------------+               +----------------------------+
-  
+
                         +-----------------------+
                         | DBIx::DataModel::Base |
                         +-----------------------+
@@ -76,11 +84,11 @@ The following picture shows the class hierarchy :
       |     +------------------------+  +-----------------------+
       |     | DBIx::DataModel::Table |  | DBIx::DataModel::View |
       |     +------------------------+  +-----------------------+
-      |                      |                              /
-  ====|======================|=============================/========
-      |                      |    APPLICATION CLASSES     /
-      |                      |    ===================    /
-      |                      |                          /
+      |                       |                             /
+  ====|=======================|============================/=======
+      |  APPLICATION CLASSES  |                           /
+      |  ===================  |                          /
+      |                       |                         /
   +----------+     +-------------------+               /
   | MySchema |     | MySchema::Table_n |-+            /
   +----------+     +--+----------------+ |-+         /
@@ -92,7 +100,6 @@ The following picture shows the class hierarchy :
                                   +--+------------------+ |-+
                                      +--+-----------------+ |
                                         +-------------------+
-
 
 The top half of the picture represents the parent classes distributed with
 C<DBIx::DataModel>. The bottom half represents derived classes
@@ -106,19 +113,19 @@ L<DBIx::DataModel|DBIx::DataModel>
 is just a façade interface to
 L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>.
 The helper class
-L<DBIx::DataModel::Statement|DBIx::DataModel::Statement> 
+L<DBIx::DataModel::Statement|DBIx::DataModel::Statement>
 implements the L</select> method.
 
 Subclasses of L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>
-are created by the 
+are created by the
 L<Schema|DBIx::DataModel::Doc::Reference/"Schema">
-method in C<DBIx::DataModel>; 
+method in C<DBIx::DataModel>;
 in most cases only one such class will be needed,
 unless the application talks to several databases
 simultaneously.
 
 Subclasses of L<DBIx::DataModel::Table|DBIx::DataModel::Table>
-represent tables in the database and are created by the 
+represent tables in the database and are created by the
 L<Table|DBIx::DataModel::Doc::Reference/"Table">
 method in L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>.
 
@@ -127,7 +134,7 @@ represent specific SQL queries, in particular queries
 that join several tables. They may be created explicitly by calling the
 L<View|DBIx::DataModel::Doc::Reference/"View">
 method in L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>;
-but in most cases they will be indirectly created through calls to the 
+but in most cases they will be indirectly created through calls to the
 L<join|DBIx::DataModel::Doc::Reference/"join">
 method. C<View> subclasses use multiple inheritance : they inherit
 first from
@@ -139,7 +146,7 @@ exploit all role methods of their parent tables.
 =head2 Instances
 
 Data rows retrieved from the database are encapsulated
-as instances of the application-specific C<Table> and C<View> 
+as instances of the application-specific C<Table> and C<View>
 subclasses. Methods in those objects are either various ways
 to navigate through the associations in the database and
 retrieve related rows, or methods to modify the data.
@@ -149,22 +156,64 @@ instance of L<DBIx::DataModel::Statement|DBIx::DataModel::Statement>.
 This instance has methods for preparing the SQL query, binding
 parameters to it, executing the query, and getting
 at the resulting data rows.
-Statement instances are usually short-lived and 
+Statement instances are usually short-lived and
 confined to specific internal parts of the application, while
-table or view instances are usually transmitted to the 
+table or view instances are usually transmitted to the
 presentation layers of the application, in order to exploit the
 data within reports, forms, etc.
 Data rows know from which source they were created, because
 they are blessed into table or view classses; but they do not
 know from which statement they were queried.
- 
 
-In contrast with some other ORMs, 
+
+The following picture shows relationships between classes
+and instances :
+
+  FRAMEWORK CLASSES                  +----------------------------+
+  =================                  | DBIx::DataModel::Statement |
+                                     +----------------------------+
+                                                              |
+  ============================================================|=====
+  APPLICATION CLASSES                                         |
+  ===================                                         |
+                                                              |
+  +----------+     +-------------------+                      |
+  | MySchema |     | MySchema::Table_n |-+                    |
+  +----------+     +--+----------------+ |-+                  |
+                      +--+---------------+ |                  |
+                         +-----------------+                  |
+                             |                                |
+                             |    +---------------------+     |
+                             |    | auto_generated_view +-+   |
+                             |    +--+------------------+ |   |
+                             |       +--------------------+   |
+                             |         |                      |
+  ===========================|=========|======================|=====
+  INSTANCES                  |         |                      |
+  =========              +-----+    +-----+          +-----------+
+                         | row |    | row |          | statement |
+                         +-----+    +-----+          +-----------+
+
+In contrast with some other ORMs,
 C<Schema> subclasses have no runtime instances :
 all information is within the schema subclass.
-This design is discussed below in 
+This design is discussed below in
 the L<DESIGN FAQ|/"DESIGN FAQ"> section.
 
+
+=head2 Meta-classes
+
+Each application class has a I<metaclass>, i.e. an object 
+of a class in the C<DBIx::DataModel::Meta> namespace.
+
+Metaclasses hold information about application classes,
+and implement some of their methods. In most cases,
+this is totally transparent to end users; however, users
+can interact with metaclasses to get some information
+about the available tables, associations, etc., or 
+even to change their behaviour. See L<TODO:MORE_DOC_ON_METACLASSES>.
+
+[TODO : PICTURE]
 
 
 =head2 Polymorphic methods
@@ -179,19 +228,19 @@ taking care of the inner details.
 
 =head3 Polymorphic C<join>
 
-The C<join> method, when applied to a B<schema>, 
-is a class method that dynamically generates a view 
-(i.e. a new subclass of C<DBIx::DataModel::View>), 
+The C<join> method, when applied to a B<schema>,
+is a class method that dynamically generates a view
+(i.e. a new subclass of C<DBIx::DataModel::View>),
 starting from a given class and then following the associations.
 
-When applied to a B<table> or a B<view>, 
-C<join> is a class method that creates a statement to 
+When applied to a B<table> or a B<view>,
+C<join> is a class method that creates a statement to
 query one or several associated tables.
-The statement contains a condition to restrict the results 
+The statement contains a condition to restrict the results
 according to the initial association.
 
 When applied to a B<data row> (to an instance of a table or a view),
-C<join> is an instance method that works like the 
+C<join> is an instance method that works like the
 class method (i.e. creates a statement), but in addition
 binds values of the current object to the appropriated
 placeholders within the query. This is illustrated
@@ -206,18 +255,233 @@ to get at data rows.
 
 The C<select> method, when applied to a table or a view, is a class
 method that generates a statement object, and returns either
-that object, or something generated by that object (data rows, 
-SQL code, or a low-level C<sth> handle). Users can control the 
+that object, or something generated by that object (data rows,
+SQL code, or a low-level C<sth> handle). Users can control the
 return value through the C<-resultAs> parameter.
 
 When applied to an already existing statement object,
 C<select> is an instance method that executes that statement,
-and likewise returns various things depending on the 
+and likewise returns various things depending on the
 C<-resultAs> parameter.
 
 In both cases, C<select> is meant to start from some kind of
-data source, and yield either immediate data rows or some intermediate 
+data source, and to yield either immediate data rows or some intermediate
 object that later will produce data rows.
+
+
+
+=head1 ASSOCIATION
+
+[TODO : REWORK THE WHOLE SECTION. Below are some bits
+remaining from previous documentation]
+
+
+
+
+=head3 Roles as additional methods in table classes
+
+As a result of the association declaration, the Perl class
+C<< $table1 >> will get an additional method named
+C<< $role2 >> for accessing the associated object(s) in C<< $table2 >>; 
+that method normally returns an arrayref, unless C<< $multiplicity2 >>
+has maximum '1' (in that case the return value is a single object
+ref).  Of course, C<< $table2 >> conversely gets a method named 
+C<< $role1 >>. 
+
+To understand why tables and roles are crossed, look at the UML picture :
+
+  +--------+                     +--------+
+  |        | *              0..1 |        |
+  | Table1 +---------------------+ Table2 |
+  |        | role1         role2 |        |
+  +--------+                     +--------+
+
+so from an object of C<Table1>, you need a method C<role2> to access
+the associated object of C<Table2>. In your diagrams, be careful to
+get the role names correctly according to the UML
+specification. Sometimes we see UML diagrams where role names are on the
+wrong side, mainly because modelers have a background in
+Entity-Relationship or Merise methods, where it is the other way
+around.
+
+
+Role methods perform joins within Perl (as opposed to joins
+directly performed within the database). That is, given a declaration
+
+  $schema->Association([qw/Employee   employee   1   /],
+                       [qw/Activity   activities 0..*/]);
+
+we can call
+
+  my activities = $anEmployee->activities
+
+which will implicitly perform a 
+
+  SELECT * FROM Activity WHERE emp_id = $anEmployee->{emp_id}
+
+The role method can also accept additional parameters
+in L<SQL::Abstract> format, exactly like the 
+L<select()|/"select"> method. So for example
+
+  my $activities = $anEmployee->activities(-columns => [qw/act_name salary/],
+                                           -where   => {is_active => 'Y'});
+
+would perform the following SQL request :
+
+  SELECT act_name, salary FROM Activity WHERE 
+    emp_id = $anEmployee->{emp_id} AND
+    is_active = 'Y'
+
+If the role method is called without any parameters, and
+if that role was previously expanded (see L<expand()|/"expand"> method), 
+i.e. if the object hash contains an entry C<< $obj->{$role} >>, 
+then this data is reused instead of calling the database again
+(this is a primitive form of caching). To force a new
+call to the database, supply some parameters :
+
+  $emp->expand('activities');  # stores result in $emp->{activities}
+  $list = $emp->activities;    # returns cached $emp->{activities}
+  $list = $emp->activities(-columns => '*');  # default columns, but 
+                                              # forces a new call to the DB
+
+Sometimes associations are unidirectional (it does not make sense to
+traverse the association in both directions).  In such cases, just
+supply 0 or an empty string (or even the string C<"0"> or C<'""'> or
+C<--> or C<"none">) to one of the role names : then the corresponding
+role method is not generated.
+
+
+=head3 Methods C<insert_into_...>
+
+When a role has multiplicity '*', another method
+named C<insert_into_...> is also installed, that will
+create new objects of the associated class, taking care
+of the linking automatically :
+
+  $an_employee->insert_into_activities({d_begin => $today, 
+                                        dpt_id  => $dpt});
+
+This is equivalent to
+
+  $schema->table('Activity')->insert({d_begin => $today, 
+                                      dpt_id  => $dpt, 
+                                      emp_id  => $anEmployee->{emp_id}});
+
+=head3 Many-to-many associations
+
+UML conceptual models may contain associations where
+both roles have multiplicity '*' (so-called 
+B<many-to-many> associations). However, when it comes to 
+actual database implementation, such associations
+need an intermediate linking table to collect 
+couples of identifiers from both tables. 
+
+C<DBIx::DataModel> supports many-to-many associations
+as a kind of syntactic sugar, translated into 
+low-level associations with the linking table. 
+The linking table needs to be declared first :
+
+  $schema->Table(qw/LinkTable link_table prim_key1 prim_key2/);
+
+  $schema->Association([qw/Table1     role1       0..1/],
+                       [qw/LinkTable  link_table  *   /]);
+
+  $schema->Association([qw/Table2     role2       0..1/],
+                       [qw/LinkTable  link_table  *   /]);
+
+This describes a diagram like this :
+
+  +--------+                   +-------+                   +--------+
+  |        | 0..1            * | Link  | *            0..1 |        |
+  | Table1 +-------------------+  --   +-------------------+ Table2 |
+  |        | role1  link_table | Table | link_table  role2 |        |
+  +--------+                   +-------+                   +--------+
+
+Then we can declare the  many-to-many association, very much like
+ordinary associations, except that the last items in the argument
+lists are names of roles to follow, instead of names of columns to join.
+In the diagram above, we must follow roles C<link_table> and C<role2>
+in order to obtain the rows of C<Table2> related to an instance
+of C<Table1>; so we write
+
+  $schema->Association([qw/Table1  roles1  *  link_table role1/],
+                       [qw/Table2  roles2  *  link_table role2/]);
+
+which describes a diagram like this :
+
+              +--------+                    +--------+
+              |        | *                * |        |
+              | Table1 +--------------------+ Table2 |
+              |        | roles1      roles2 |        |
+              +--------+                    +--------+
+
+The declaration has created a new method C<roles2> in 
+C<Table1>; that method is implemented by following roles
+C<linksA> and C<role2>. So for an object C<obj1> of C<Table1>,
+the call
+
+  my $obj2_arrayref = $obj1->roles2();
+
+will generate the following SQL :
+
+  SELECT * FROM link_table INNER JOIN table2
+            ON link_table.prim_key2=table2.prim_key2
+    WHERE link_table.prim_key1 = $obj->{prim_key1}
+
+
+Observe that C<roles2()> returns rows from a I<join>, 
+so these rows will belong both to C<Table2> I<and> to 
+C<Link_Table>.
+
+Many-to-many associations do not have an
+automatic C<insert_into_*> method : you must 
+explicitly insert into the link table.
+
+
+
+=head3 Following multiple associations
+
+In the previous section we were following two roles at once
+in order to implement a many-to-many association. More generally,
+it may be useful to follow several roles at once, joining
+the tables in a single SQL query. This can be done through the
+following methods :
+
+=over
+
+=item *
+
+L</join>  (invoked on a Schema) : create a new C<View> that selects 
+from several tables, filling the joins automatically
+
+
+=item *
+
+L</join> (invoked on an instance of Table or View) :
+from a given object, follow a list of roles to get information
+from associated tables.
+
+=item * 
+
+L</join> (invoked on Table or View class) :
+from a given class, follow a list of roles to prepare getting information
+from associated tables; the result is a L<Statement|DBIx::DataModel::Statement>
+object that can be bound to specific members of the initial table
+and then can be selected.
+
+
+=item *
+
+L</MethodFromJoin> :
+add a new method in a table, that will follow a list of roles 
+(shortcut for repeated calls to C<join>).
+
+
+=back
+
+
+
+
 
 
 
@@ -228,17 +492,17 @@ their role in the general C<DBIx::DataModel> architecture.
 
 =head2 Difference between views and statements
 
-Both views and statements encapsulate SQL SELECT queries, 
+Both views and statements encapsulate SQL SELECT queries,
 so some clarification is of order.
 
 A view is a I<subclass> of C<DBIx::DataModel::View>,
-and therefore also a subclass of 
+and therefore also a subclass of
 C<DBIx::DataModel::Source>.
 Data rows retrieved from that source become instances
 of the view. The view usually encapsulates a database
 join, and the table classes corresponding to the joined
 tables are also parent classes for the view (multiple
-inheritance). This means that instances of the view inherit all 
+inheritance). This means that instances of the view inherit all
 parent methods for manipulating columns, navigating through
 associations, etc. The view may include a WHERE clause
 to restrict the database query, but this is very unfrequent :
@@ -255,10 +519,10 @@ through a I<lifecycle> with following steps : assembling query clauses,
 generating the SQL, binding values, preparing the database statement,
 executing the database query, retrieving the results and blessing them
 into appropriate classes. Statements also have
-pagination methods to walk through the results in chunks 
+pagination methods to walk through the results in chunks
 of several data rows.
 
-With respect to the generated SQL, we could say in short that 
+With respect to the generated SQL, we could say in short that
 a view represents the FROM clause of the SQL, while
 a statement represents all other clauses
 (list of columns, WHERE, ORDER BY, GROUP BY, etc.).
@@ -269,26 +533,26 @@ a statement represents all other clauses
 =head3 Principle
 
 A statement object can accumulate requirements in several
-steps, before generating the actual database query. 
+steps, before generating the actual database query.
 Therefore it is a collaborative platform where
-various independent software components can 
+various independent software components can
 contribute to various parts of the final SQL.
 
 =head3 Example
 
   # create a statement with initial conditions on the department
   my $statement = $department->join(qw/activities employee/);
-  
-  # add a date condition (from config file or CGI params or whatever) 
+
+  # add a date condition (from config file or CGI params or whatever)
   my $date = get_initial_date_from_some_external_source();
   $statement->refine(-where => {d_begin => {">" => $date}});
-  
+
   # now issue the SQL query
   my $rows = $statement->select(-columns => [qw/d_begin lastname firstname/]);
 
 This code generates the following SQL :
 
-  SELECT d_begin, lastname, firstname 
+  SELECT d_begin, lastname, firstname
   FROM   activity INNER JOIN employee
                   ON activity.emp_id=employee.emp_id
   WHERE  dpt_id  = $departement->{dpt_id}
@@ -312,8 +576,8 @@ stepwise building of SQL conditions as just demonstrated above.
 
 Stepwise binding of values to placeholders requires
 I<named placeholders>, as opposed to usual positional placeholders.
-Named placeholders are usually expressed with a 
-question mark followed by a name, like in 
+Named placeholders are usually expressed with a
+question mark followed by a name, like in
 
   $statement->refine(-where => {col1 => '?foo',
                                 col2 => '?bar',
@@ -325,8 +589,8 @@ or after the C<refine> step) through the L</bind> method :
   $statement->bind(foo => 123, bar => 456);
 
 
-If the question mark prefix C<?> is inconvenient, another placeholder 
-prefix may be specified as an option to the 
+If the question mark prefix C<?> is inconvenient, another placeholder
+prefix may be specified as an option to the
 L<schema creation method|DBIx::DataModel::Doc::Reference/Schema>.
 
 
@@ -366,7 +630,7 @@ has been generated.
 
 =item executed
 
-Bound values have been sent to the database and the 
+Bound values have been sent to the database and the
 sth is executed, ready to extract data rows.
 
 =back
@@ -402,25 +666,32 @@ sth is executed, ready to extract data rows.
                                   |    |   '------>-------'       |
                                   |    |                execute() |
                                   |    '------------------>-------'
-  +-------------+  next()/all()   |                  
-  | data row(s) |-------<---------'                  
-  +-------------+              
+  +-------------+  next()/all()   |
+  | data row(s) |-------<---------'
+  +-------------+
+
+
+
+
+=head1 COLUMN HANDLERS
+
+
 
 
 =head1 GENERAL DESIGN PRINCIPLES
 
 
 Material in the previous sections presented the general architecture
-of C<DBIx::DataModel>; this should be enough to easily follow the 
+of C<DBIx::DataModel>; this should be enough to easily follow the
 L<QUICKSTART|DBIx::DataModel::Doc::Quickstart> chapter,
-or investigate more details in the 
+or investigate more details in the
 L<REFERENCE|DBIx::DataModel::Doc::Reference> chapter.
 
 
-Now we will discuss the motivation for some design 
-features of C<DBIx::DataModel>, in order to explain 
+Now we will discuss the motivation for some design
+features of C<DBIx::DataModel>, in order to explain
 not only I<how> it works, but also I<why> it was designed that way.
-This section can be safely skipped, unless you 
+This section can be safely skipped, unless you
 are interested in comparing various ORMs.
 
 
@@ -785,9 +1056,9 @@ L<DBI|DBI> fine-tuning options. In particular :
 
 =item *
 
-At the L<DBI|DBI> level, the fastest way to get a large number 
+At the L<DBI|DBI> level, the fastest way to get a large number
 of data rows from DBI is to retrieve each row into the same memory
-location, using the L<bind_columns|DBI/bind_columns> method. 
+location, using the L<bind_columns|DBI/bind_columns> method.
 C<DBIx::DataModel> can exploit this feature
 through a I<fast statement> :
 
@@ -799,7 +1070,7 @@ through a I<fast statement> :
   }
 
 This code creates a single memory location for storing a data row;
-at each call to the C<next> method, memory values are updated 
+at each call to the C<next> method, memory values are updated
 from the database, and the same location is returned.
 
 While being very fast, this approach also has some limitations :
@@ -812,22 +1083,22 @@ regular statements create a fresh hashref for each row.
 
 The client code can have fine control on statement preparation and
 execution, which is useful for writing efficient loops.
-For example, instead of writing 
+For example, instead of writing
 
   my $list = My::Table->select(...);
   foreach my $obj (@$list) {
     my $related_rows = $obj->join(qw/role1 role2/)->select;
-    ... 
+    ...
   }
 
-we can prepare a statement before the loop, and then 
+we can prepare a statement before the loop, and then
 just execute that statement at each iteration :
 
   my $statement = My::Table->join(qw/role1 role2/)->prepare;
   my $list = My::Table->select(...);
   foreach my $obj (@$list) {
     my $related_rows = $statement->execute($obj)->all;
-    ... 
+    ...
   }
 
 
@@ -835,8 +1106,8 @@ just execute that statement at each iteration :
 
 C<DBI> has a L<prepare_cached|DBI/prepare_cached> method, that works
 like C<prepare> except that the statement handle returned is stored in
-a hash associated with the C<$dbh>. This can be exploited from 
-C<DBIx::DataModel> by stating 
+a hash associated with the C<$dbh>. This can be exploited from
+C<DBIx::DataModel> by stating
 
   $schema->dbiPrepareMethod('prepare_cached');
 
@@ -902,9 +1173,9 @@ redirect C<STDIN>, for the duration of one specific computation, and
 then automatically restore it to its previous state.
 
 C<DBIx::DataModel> uses a similar approach. The database handle
-is stored in the schema class, and can be changed dynamically, 
-which will immediately affect all classes and objects related 
-to that schema. However, state modifications in schemas 
+is stored in the schema class, and can be changed dynamically,
+which will immediately affect all classes and objects related
+to that schema. However, state modifications in schemas
 can be limited to a specific scope through the
 L<localizeState|DBIx::DataModel::Doc::Reference/localizeState> method.
 Furthermore, the
@@ -917,7 +1188,7 @@ to program transactions with cross-database operations (copying objects
 from one database to another, or simultaneously performing the same
 insert or delete in several databases).
 
-Actually, localization is only needed for  C<Schema> subclasses, 
+Actually, localization is only needed for  C<Schema> subclasses,
 that indeed hold a mutable global state
 (database connection, current debug mode, current value of
 C<selectImplicitlyFor>, etc.).
@@ -963,12 +1234,12 @@ L<select()|DBIx::DataModel::Doc::Reference/select>.
 =head2 Serialization
 
 C<DBIx::DataModel> includes support for the standard
-L<Storable|Storable> serialization / deserialization 
-methods C<freeze> and C<thaw> : so records and record trees 
+L<Storable|Storable> serialization / deserialization
+methods C<freeze> and C<thaw> : so records and record trees
 can be written into files or sent to other processes.
 Dynamic subclasses for database joins are re-created on the fly
 during deserialization through C<thaw>. However, there is no support
-for serializing database connections (this would be hazardous, and also 
+for serializing database connections (this would be hazardous, and also
 insecure because serialization data would contain database passwords).
 Therefore the process performing deserialization is responsible
 for opening the database connection by its own means, before
@@ -979,20 +1250,17 @@ calling the C<thaw> method.
 =head1 TO DO
 
 
-Here are some points that hopefully will be improved in 
+Here are some points that hopefully will be improved in
 a future release C<DBIx::DataModel> :
 
   - 'hasInvalidColumns' : should be called automatically before insert/update ?
   - 'validate' record handler (not only column handlers)
   - 'normalize' handler : for ex. transform empty string into null
   - walk through WHERE queries and apply 'toDB' handler (not obvious!)
-  - maybe it is not a good idea to modify data in place when 
-    performing inserts or updates; should perhaps clone the arguments.
   - more extensive and more organized testing
-  - add support for UPDATE/DELETE ... WHERE ...
-  - add PKEYS keyword in -columns, will be automatically replaced by 
+  - add PKEYS keyword in -columns, will be automatically replaced by
     names of primary key columns of the touched tables
-  - design API for easy dynamic association of objects without dealing 
+  - design API for easy dynamic association of objects without dealing
     with the keys
   - remove spouse example from doc (because can't have same table
     twice in roles)
@@ -1007,3 +1275,74 @@ a future release C<DBIx::DataModel> :
   - inheritance between tables: a) support for Postgres; b) support for DB views
   - support for DBI TraceLevel
   - execute() : check for unbound "dbidm placeholders"
+  - support DISTINCT ON ...
+  - support find_or_create, update_or_create
+  - doc : Schema has only tables, pk, fk (no cols, triggers, stored procs, domains)
+  - doc : SQL-oriented (like Fey)
+  - copy idea from DBIC:Storage:DBI:MultiColumnIn
+
+  - Storable
+     - hooks for YAML ?
+     - think about STORABLE_attach
+
+  - doc : explain Table inheritance
+     $schema->Table(..., {parents => ...});
+     # ADD TESTS for table inheritance
+
+
+  - declare RT bug for Params::Validate : doc is confused about
+    validate_with / validation_options
+
+
+  - savepoints
+
+  - allow tables without primary key
+
+  - various policies for guessing foreign keys : e.g proc.id = attr.proc_id
+
+  - Statement::refine() should be more intelligent
+      - combine (-where, -orderBy, callbacks)
+      - reject overrides when not possible
+      - should add something like a 'reset' method ??
+
+  - explain how to design families of tables with an intermediate superclass
+
+  - add attribute 'db_schema_name' in Schema->new(). Then one can have
+       my $dev  = Schema->new(dbh => ..., db_schema_name => 'DEV');
+       my $prod = Schema->new(dbh => ..., db_schema_name => 'PROD');
+    and that name is prepended to table names
+
+  - fix all doc refernces to ::View or ::Table (add Source::)
+
+  - doc glossary, introduce the 'path' term
+
+  - think API for defining column types : just in new() or allow
+    to do it in later calls to a "setter" method ?
+
+  - find a way to rename _singleInsert > _single_insert, without breaking
+    compatibility
+
+
+  Other column handlers : 
+    - validate
+    - normalize
+
+- various policies for guessing foreign keys : e.g proc.id = attr.proc_id
+
+- Statement::refine() should be more intelligent
+    - combine (-where, -orderBy, callbacks)
+    - reject overrides when not possible
+    - should add something like a 'reset' method ??
+
+- declare RT bug for Params::Validate : doc is confused about 
+  validate_with / validation_options
+
+- doc : explain Table inheritance
+   $schema->Table(..., {parent_tables => ...});
+   # ADD TESTS for table inheritance
+- Storable
+   - hooks for YAML ?
+   - think about STORABLE_attach
+
+ - update syntactic sugar 
+    $class->update(-set => {hashref}, -where => [-key => @_])

@@ -1,9 +1,13 @@
 #----------------------------------------------------------------------
 package DBIx::DataModel::Statement::JDBC;
 #----------------------------------------------------------------------
-use base qw/DBIx::DataModel::Statement/;
-use DBI  qw/SQL_INTEGER/;
+use strict;
+use warnings;
+no strict 'refs';
 
+use parent qw/DBIx::DataModel::Statement/;
+use mro    qw/c3/;
+use DBI    qw/SQL_INTEGER/;
 
 # methods on the JDBC ResultSet object, without argument
 foreach my $method (qw/size           getRow
@@ -33,39 +37,41 @@ foreach my $method (qw/setMaxRows setQueryTimeout/) {
   };
 }
 
+sub sqlize {
+  my ($self, @args) = @_;
 
-sub _limit_offset {
-  my ($self, $sql_ref, $bind_ref) = @_;
+  # merge new args into $self->{args}
+  $self->refine(@args) if @args;
 
-  $self->{offset} = $self->{args}{-offset} || 0;
+  # remove -limit and -offset from args; they will be handled later in 
+  # prepare() and execute(), see below
+  $self->{jdbc_limit} = delete $self->{args}{-limit};
+  $self->{offset}     = delete $self->{args}{-offset} || 0;
 
-  # do nothing to the SQL or bind parameters (limit and offset
-  # will be handled in prepare() and execute(), see below)
+  $self->next::method();
 }
+
 
 sub prepare {
   my ($self, @args) = @_;
-  my $limit = $self->{args}{-limit};
-  $self->SUPER::prepare(@args);
+  $self->next::method(@args);
+  my $limit = $self->{jdbc_limit};
   $self->setMaxRows($limit + $self->{offset}) if $limit;
   return $self;
 }
 
-
 sub execute {
   my ($self, @args) = @_;
-  $self->SUPER::execute(@args);
+  $self->next::method(@args);
   $self->absolute($self->{offset}) if $self->{offset};
   return $self;
 }
 
-
-sub rowCount {
+sub row_count {
   my ($self) = @_;
-  $self->{rowCount} = $self->getMemberCount unless exists $self->{rowCount};
-  return $self->{rowCount};
+  $self->{row_count} = $self->getMemberCount unless exists $self->{row_count};
+  return $self->{row_count};
 }
-
 
 1;
 
@@ -80,7 +86,7 @@ DBIx::DataModel::Statement::JDBC - Statement for interacting with DBD::JDBC
 When defining the L<DBIx::DataModel> Schema :
 
   DBIx::DataModel->Schema("MySchema",
-     statementClass => "DBIx::DataModel::Statement::JDBC"
+     statement_class => "DBIx::DataModel::Statement::JDBC",
   );
 
 When using the schema:

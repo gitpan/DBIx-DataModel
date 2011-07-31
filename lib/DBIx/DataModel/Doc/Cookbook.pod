@@ -153,7 +153,7 @@ For example here is a loop that prints a hash slice from  each row :
   }
 
 In fact, each row is a I<blessed> hashref. This can be a problem
-with some external modules like L<JSON> that croaks when encoding
+with some external modules like L<JSON> that croak when encoding
 a blessed reference. In that case you can use the C<unbless> function
 
   foreach my $row (@$rows) {
@@ -165,9 +165,18 @@ a blessed reference. In that case you can use the C<unbless> function
 
 =head2 Custom SQL
 
-Create a L<DBIx::DataModel::View|DBIx::DataModel::View> to encapsulate your 
-SQL.
 
+Create a 'Perl view' to encapsulate your SQL, i.e. a 
+L<DBIx::DataModel::Source::Table>, possibly with 
+a C<where> clause :
+
+  $meta_schema->define_table(
+    name     => 'MyView',
+    db_table => 'TABLE1 EXOTIC JOIN TABLE2 ON ...',
+    where    => {col1 => $filter1, col2 => $filter2}
+    parents  => [map {meta_schema->table($_)} qw/Table1 Table2/],
+  );
+  
 
 =head1 DATA UPDATE
 
@@ -181,16 +190,16 @@ SQL.
   # so far nothing has happened in the database
   
   # now do the transaction
-  $schema->doTransaction($to_do);
+  $schema->do_transaction($to_do);
 
 =head2 Nested transaction
 
-  $schema->doTransaction(sub {
+  $schema->do_transaction(sub {
     do_something;
-    $schema->doTransaction(sub { 
+    $schema->do_transaction(sub { 
       some_nested_code();
     });
-    $schema->doTransaction(sub { 
+    $schema->do_transaction(sub { 
       some_other_nested_code();
    });
   });
