@@ -64,8 +64,7 @@ DBIx::DataModel::Meta::Type - registered collection of column handlers
 
 A I<type> is just a hashref of handler names and
 handler bodies (coderefs). The type can then be applied to some
-columns in some tables; this is usually done in the Table declaration
-(C<column_types> argument), or can be applied later through the
+columns in some tables through the
 L<DBIx::DataModel::Doc::Reference/define_column_type> method.
 
 

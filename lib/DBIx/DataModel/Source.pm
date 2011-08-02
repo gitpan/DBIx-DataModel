@@ -26,27 +26,38 @@ sub schema {
 }
 
 
-# several class methods only available if schema is in singleton mode;
+sub primary_key {
+  my $self = shift; 
+
+  # get primary key columns
+  my @primary_key = $self->metadm->primary_key;
+
+  # if called as instance method, get values in those columns
+  @primary_key = @{$self}{@primary_key} if ref $self;
+
+  # choose what to return depending on context
+  if (wantarray) {
+    return @primary_key;
+  }
+  else {
+    @primary_key == 1
+      or croak "cannot return a multi-column primary key in a scalar context";
+    return $primary_key[0];
+  }
+}
+
+
+# several class methods, only available if in single-schema mode;
 # such methods are delegated to the Statement class.
 my @methods_to_delegate = qw/select fetch fetch_cached bless_from_DB/;
 _delegate_to_statement_class($_) foreach @methods_to_delegate;
 
-sub _delegate_to_statement_class { # also used by Source::Table.pm
-  my $method = shift;
-  no strict 'refs';
-  *{$method} = sub {
-    my ($class, @args) = @_;
-    not ref($class) 
-      or croak "$method() should be called as class method";
-
-    my $metadm      = $class->metadm;
-    my $meta_schema = $metadm->schema;
-    my $schema      = $meta_schema->class->singleton;
-    my $statement   = $meta_schema->statement_class->new($metadm, $schema);
-
-    return $statement->$method(@args);
-  };
+sub expand {
+  my ($self, $path, @options) = @_;
+  $self->{$path} = $self->$path(@options);
 }
+
+sub auto_expand {} # default; overridden in subclasses through set_auto_expand()
 
 
 sub apply_column_handler {
@@ -75,14 +86,6 @@ sub apply_column_handler {
 
   return $results;
 }
-
-
-sub expand {
-  my ($self, $path, @args) = @_;
-  $self->{$path} = $self->$path(@args);
-}
-
-sub auto_expand {} # default; overridden in subclasses through set_auto_expand()
 
 
 sub join {
@@ -127,30 +130,30 @@ sub join {
 }
 
 
-sub primary_key {
-  my $self = shift; 
-
-  # get primary key columns
-  my @primary_key = $self->metadm->primary_key;
-
-  # if called as instance method, get values in those columns
-  @primary_key = @{$self}{@primary_key} if ref $self;
-
-  # choose what to return depending on context
-  if (wantarray) {
-    return @primary_key;
-  }
-  else {
-    @primary_key == 1
-      or croak "cannot return a multi-column primary key in a scalar context";
-    return $primary_key[0];
-  }
-}
 
 
 sub has_invalid_columns {
   croak "NOT IMPLEMENTED YET";
 }
+
+
+sub _delegate_to_statement_class { # also used by Source::Table.pm
+  my $method = shift;
+  no strict 'refs';
+  *{$method} = sub {
+    my ($class, @args) = @_;
+    not ref($class) 
+      or croak "$method() should be called as class method";
+
+    my $metadm      = $class->metadm;
+    my $meta_schema = $metadm->schema;
+    my $schema      = $meta_schema->class->singleton;
+    my $statement   = $meta_schema->statement_class->new($metadm, $schema);
+
+    return $statement->$method(@args);
+  };
+}
+
 
 
 #----------------------------------------------------------------------

@@ -98,6 +98,9 @@ sub new {
   $self->$install_method(qw/A B/) if $self->{B}{role};
   $self->$install_method(qw/B A/) if $self->{A}{role};
 
+  # EXPERIMENTAL : no longer need association ends; all info is stored in Paths
+  # delete@{$self}{qw/A B/};
+
   # avoid circular reference
   weaken $self->{schema};
 
@@ -107,6 +110,7 @@ sub new {
 
 # accessor methods for all members of %$self
 DBIx::DataModel::Meta::Utils->define_readonly_accessors(
+#  __PACKAGE__, qw/schema name kind path_AB path_BA/
   __PACKAGE__, keys(%$association_spec), "path_AB", "path_BA",
 );
 

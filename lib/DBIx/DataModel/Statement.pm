@@ -38,16 +38,18 @@ use constant {
   EXECUTED => dualvar(4, "executed"),
 };
 
+
+
 #----------------------------------------------------------------------
 # PUBLIC METHODS
 #----------------------------------------------------------------------
 
 sub new {
-  my ($class, $source, $schema, %other_args) = @_;
+  my ($class, $meta_source, $schema, %other_args) = @_;
 
-  # check $source (must be an instance of Source::Table or Source::Join)
-  $source && $source->isa('DBIx::DataModel::Meta::Source')
-    or croak "invalid source for DBIx::DataModel::Statement->new()";
+  # check $meta_source (must be an instance of a subclass of Meta::Source)
+  $meta_source && $meta_source->isa('DBIx::DataModel::Meta::Source')
+    or croak "invalid meta_source for DBIx::DataModel::Statement->new()";
 
   # check $schema
   $schema && ref($schema) && $schema->isa('DBIx::DataModel::Schema')
@@ -56,7 +58,7 @@ sub new {
   # build the object
   my $self = bless {
     status           => NEW,
-    source           => $source,
+    meta_source      => $meta_source,
     schema           => $schema,
     args             => {},
     pre_bound_params => {},
@@ -74,32 +76,28 @@ sub new {
 }
 
 
-sub metadm { # forward to source
+# accessors
+DBIx::DataModel::Meta::Utils->define_readonly_accessors(
+  __PACKAGE__, qw/meta_source schema status/,
+);
+
+# additional accessor; here, 'metadm' is a synonym for 'meta_source'
+sub metadm { 
   my $self = shift;
-  return $self->{source}->metadm;
+  return $self->{meta_source};
 }
 
 
-sub schema {
-  my $self = shift;
-  return $self->{schema};
-}
+# don't remember why this "clone()" method was ever created.
+# Keep the code  around for a while ...
 
+# sub clone {
+#   my ($self) = @_;
+#   $self->{status} < PREPARED
+#     or croak "can't clone() when in status $self->{status}";
 
-sub status {
-  my ($self) = @_;
-  return $self->{status};
-}
-
-
-sub clone {
-  my ($self) = @_;
-  $self->{status} < PREPARED
-    or croak "can't clone() when in status $self->{status}";
-
-  return dclone($self); # THINK: should use Clone::clone instead?
-}
-
+#   return dclone($self); # THINK: should use Clone::clone instead?
+# }
 
 
 #----------------------------------------------------------------------
@@ -183,14 +181,15 @@ sub refine {
       /^-fetch$/ and do {
         # build a -where clause on primary key
         my $primary_key = ref($v) ? $v : [$v];
-        my @pk_columns  = $self->{source}->primary_key;
+        my @pk_columns  = $self->{meta_source}->primary_key;
         @pk_columns
-          or croak "fetch: no primary key in source $self->{source}";
+          or croak "fetch: no primary key in source $self->{meta_source}";
         @pk_columns == @$primary_key
           or croak sprintf "fetch from %s: primary key should have %d values",
-                           $self->{source}, scalar(@pk_columns);
+                           $self->{meta_source}, scalar(@pk_columns);
         List::MoreUtils::all {defined $_} @$primary_key
-          or croak "fetch from $self->{source}: undefined val in primary key";
+          or croak "fetch from $self->{meta_source}: "
+                 . "undefined val in primary key";
 
         my %where = ();
         @where{@pk_columns} = @$primary_key;
@@ -233,18 +232,18 @@ sub sqlize {
 
   # shortcuts
   my $args         = $self->{args};
-  my $source       = $self->{source};
-  my $source_where = $source->{where};
+  my $meta_source  = $self->{meta_source};
+  my $source_where = $meta_source->{where};
   my $sql_abstract = $self->{schema}->sql_abstract;
 
   # build arguments for SQL::Abstract::More
   $self->refine(-where => $source_where) if $source_where;
   my @args_to_copy = qw/-columns -where -order_by -group_by -having
                         -limit -offset -page_size -page_index/;
-  my %sqla_args = (-from         => $source->db_from,
+  my %sqla_args = (-from         => $meta_source->db_from,
                    -want_details => 1);
   $args->{$_} and $sqla_args{$_} = $args->{$_} for @args_to_copy;
-  $sqla_args{-columns} ||= $source->default_columns;
+  $sqla_args{-columns} ||= $meta_source->default_columns;
 
   # "-for" (e.g. "update", "read only")
   if (($args->{-result_as}||"") ne 'subquery') {
@@ -296,7 +295,7 @@ sub sqlize {
 sub prepare {
   my ($self, @args) = @_;
 
-  my $source = $self->{source};
+  my $meta_source = $self->{meta_source};
 
   $self->sqlize(@args) if @args or $self->{status} < SQLIZED;
 
@@ -304,7 +303,7 @@ sub prepare {
     or croak "can't prepare() when in status $self->{status}";
 
   # log the statement and bind values
-  $source->class->_debug("PREPARE $self->{sql} / @{$self->{bound_params}}");
+  $meta_source->class->_debug("PREPARE $self->{sql} / @{$self->{bound_params}}");
 
   # call the database
   my $dbh          = $self->{schema}->dbh or croak "Schema has no dbh";
@@ -326,8 +325,8 @@ sub execute {
   # if not prepared yet, prepare it
   $self->prepare              if $self->{status} < PREPARED;
 
-  # DON'T REMEMBER why the line below was here. Keep it around for a while ...
-  # push @bind_args, offset => $self->{offset}  if $self->{offset};
+  # TODO: DON'T REMEMBER why the line below was here. Keep it around for a while ...
+  push @bind_args, offset => $self->{offset}  if $self->{offset};
 
   $self->bind(@bind_args)      if @bind_args;
 
@@ -433,7 +432,7 @@ sub select {
 
     # CASE hashref : all data rows, put into a hashref
     /^hashref$/i   and do {
-      @key_cols or @key_cols = $self->{source}->primary_key
+      @key_cols or @key_cols = $self->{meta_source}->primary_key
         or croak "-result_as=>'hashref' impossible: no primary key";
       my %hash;
       while (my $row = $self->next) {
@@ -453,13 +452,13 @@ sub select {
 
     # CASE fast_statement : creates a reusable row
     /^fast[-_]statement$/i and do {
-        $self->reuse_row;
+        $self->_build_reuse_row;
         return $self;
       };
 
     # CASE flat_arrayref : flattened columns from each row
     /^flat(?:_array(?:ref)?)?$/ and do {
-      $self->reuse_row;
+      $self->_build_reuse_row;
       my @vals;
       my $hash_key_name = $self->{sth}{FetchHashKeyName} || 'NAME';
       my $cols = $self->{sth}{$hash_key_name};
@@ -494,24 +493,11 @@ sub fetch_cached {
   my $self = shift;
   my $dbh_addr    = refaddr $self->schema->dbh;
   my $freeze_args = freeze \@_;
-  return $self->{source}{fetch_cached}{$dbh_addr}{$freeze_args}
+  return $self->{meta_source}{fetch_cached}{$dbh_addr}{$freeze_args}
            ||= $self->fetch(@_);
 }
 
 
-
-sub reuse_row {
-  my ($self) = @_;
-
-  $self->{status} == EXECUTED
-    or croak "cannot reuse_row() when in state $self->{status}";
-
-  # create a reusable hash and bind_columns to it (see L<DBI/bind_columns>)
-  my %row;
-  my $hash_key_name = $self->{sth}{FetchHashKeyName} || 'NAME';
-  $self->{sth}->bind_columns(\(@row{@{$self->{sth}{$hash_key_name}}}));
-  $self->{reuse_row} = \%row; 
-}
 
 
 
@@ -523,8 +509,12 @@ sub row_count {
     my ($sql, @bind) = $self->sql;
     $sql =~ s[^SELECT\b.*?\bFROM\b][SELECT COUNT(*) FROM]i
       or croak "can't count rows from sql: $sql";
+
+    # TODO : line below is NOT PORTABLE. Should accomodate for all
+    # limit-offset syntaxes !!!
     $sql =~ s[\bLIMIT \? OFFSET \?][]i
       and splice @bind, -2;
+
     my $dbh    = $self->{schema}->dbh or croak "Schema has no dbh";
     my $method = $self->{schema}->dbi_prepare_method;
     my $sth    = $dbh->$method($sql);
@@ -651,11 +641,6 @@ sub page_rows {
 }
 
 
-#----------------------------------------------------------------------
-# PRIVATE METHODS IN RELATION WITH SELECT()
-#----------------------------------------------------------------------
-
-
 sub bless_from_DB {
   my ($self, $row) = @_;
 
@@ -663,7 +648,7 @@ sub bless_from_DB {
   $row->{__schema} = $self->{schema} unless $self->{schema}{is_singleton};
 
   # bless into appropriate class
-  bless $row, $self->{source}->class;
+  bless $row, $self->{meta_source}->class;
   # apply handlers
   $self->{from_DB_handlers} or $self->_compute_from_DB_handlers;
   while (my ($column_name, $handler) 
@@ -676,12 +661,31 @@ sub bless_from_DB {
 }
 
 
+#----------------------------------------------------------------------
+# PRIVATE METHODS IN RELATION WITH SELECT()
+#----------------------------------------------------------------------
+
+sub _build_reuse_row {
+  my ($self) = @_;
+
+  $self->{status} == EXECUTED
+    or croak "cannot _build_reuse_row() when in state $self->{status}";
+
+  # create a reusable hash and bind_columns to it (see L<DBI/bind_columns>)
+  my %row;
+  my $hash_key_name = $self->{sth}{FetchHashKeyName} || 'NAME';
+  $self->{sth}->bind_columns(\(@row{@{$self->{sth}{$hash_key_name}}}));
+  $self->{reuse_row} = \%row; 
+}
+
+
+
 sub _compute_from_DB_handlers {
   my ($self) = @_;
-  my $source         = $self->{source};
+  my $meta_source    = $self->{meta_source};
   my $meta_schema    = $self->{schema}->metadm;
-  my %handlers       = $source->_consolidate_hash('column_handlers');
-  my %aliased_tables = $source->aliased_tables;
+  my %handlers       = $meta_source->_consolidate_hash('column_handlers');
+  my %aliased_tables = $meta_source->aliased_tables;
 
   # iterate over aliased_columns
   while (my ($alias, $column) = each %{$self->{aliased_columns} || {}}) {
@@ -691,13 +695,13 @@ sub _compute_from_DB_handlers {
       $handlers{$alias} = $handlers{$column};
     }
     else {
-      # WORK HERE
-
       $table_name = $aliased_tables{$table_name} || $table_name;
 
       my $table   = $meta_schema->table($table_name)
                  || firstval {($_->{db_name} || '') eq $table_name}
-                             ($source, $source->ancestors)
+                             ($meta_source, $meta_source->ancestors)
+                 # THINK: might perform a case-insensitive search 
+                 # (as second pass)
         or croak "unknown table name: $table_name";
 
       $handlers{$alias} = $table->{column_handlers}->{$column};
@@ -741,6 +745,10 @@ sub _compute_from_DB_handlers {
 sub insert {
   my $self = shift;
 
+  # check status
+  $self->{status} == NEW
+    or croak "can't insert() when in status $self->{status}";
+
   # end of list may contain options, recognized because option name is a scalar
   my $options      = $self->_parse_ending_options(\@_, qr/^-returning$/);
   my $want_subhash = ref $options->{-returning} eq 'HASH';
@@ -772,12 +780,12 @@ sub insert {
 
   # insert each record, one by one
   my @results;
-  my $source             = $self->{source};
-  my %no_update_column   = $source->no_update_column;
-  my %auto_insert_column = $source->auto_insert_column;
-  my %auto_update_column = $source->auto_update_column;
+  my $meta_source        = $self->{meta_source};
+  my %no_update_column   = $meta_source->no_update_column;
+  my %auto_insert_column = $meta_source->auto_insert_column;
+  my %auto_update_column = $meta_source->auto_update_column;
 
-  my $source_class = $self->{source}->class;
+  my $source_class = $self->{meta_source}->class;
   while (my $record = shift @records) {
     # shallow copy in order not to perturb the caller
     $record = {%$record} unless $got_records_as_arrayrefs;
@@ -856,6 +864,9 @@ my $update_spec = {
 sub update {
   my $self = shift;
 
+  # some checks
+  $self->{status} == NEW
+    or croak "can't update() when in status $self->{status}";
   @_ or croak "update() : not enough arguments";
 
   # parse arguments
@@ -874,8 +885,8 @@ sub update {
   my $to_set = {%{$args{-set}}}; # shallow copy
   $self->_maybe_inject_primary_key($to_set, \%args);
 
-  my $source       = $self->{source};
-  my $source_class = $source->class;
+  my $meta_source  = $self->{meta_source};
+  my $source_class = $meta_source->class;
   my $where        = $args{-where};
 
   # if this is an update of a single record ...
@@ -884,9 +895,9 @@ sub update {
     bless $to_set, $source_class;
 
     # apply column handlers (no_update, auto_update, 'to_DB')
-    my %no_update_column = $source->no_update_column;
+    my %no_update_column = $meta_source->no_update_column;
     delete $to_set->{$_} foreach keys %no_update_column;
-    my %auto_update_column = $source->auto_update_column;
+    my %auto_update_column = $meta_source->auto_update_column;
     while (my ($col, $handler) = each %auto_update_column) {
       $to_set->{$col} = $handler->($to_set, $source_class);
     }
@@ -904,7 +915,8 @@ sub update {
 
     # now unbless and remove the primary key
     damn $to_set;
-    $where = {map {$_ => delete $to_set->{$_}} $self->{source}->primary_key};
+    my @primary_key = $self->{meta_source}->primary_key;
+    $where = {map {$_ => delete $to_set->{$_}} @primary_key};
   }
 
   else {
@@ -913,7 +925,7 @@ sub update {
 
   # database request
   my $schema = $self->{schema};
-  my @sqla_args = ($source->db_from, $to_set, $where);
+  my @sqla_args = ($meta_source->db_from, $to_set, $where);
   my ($sql, @bind) = $schema->sql_abstract->update(@sqla_args);
   $source_class->_debug($sql . " / " . join(", ", @bind) );
   my $method = $schema->dbi_prepare_method;
@@ -934,6 +946,9 @@ my $delete_spec = {
 sub delete {
   my $self = shift;
 
+  # some checks
+  $self->{status} == NEW
+    or croak "can't delete() when in status $self->{status}";
   @_ or croak "select() : not enough arguments";
 
   # parse arguments
@@ -956,19 +971,19 @@ sub delete {
 
   $self->_maybe_inject_primary_key($to_delete, \%args);
 
-  my $source       = $self->{source};
-  my $source_class = $source->class;
+  my $meta_source  = $self->{meta_source};
+  my $source_class = $meta_source->class;
   my $where        = $args{-where};
 
   # if this is a delete of a single record ...
   if (!$where) {
     # cascaded delete
-    foreach my $component_name ($source->components) {
+    foreach my $component_name ($meta_source->components) {
       my $components = $self->{$component_name} or next;
       $_->delete foreach @$components;
     }
     # build $where from primary key
-    $where = {map {$_ => $to_delete->{$_}} $self->{source}->primary_key};
+    $where = {map {$_ => $to_delete->{$_}} $self->{meta_source}->primary_key};
   }
 
   else {
@@ -977,7 +992,7 @@ sub delete {
 
   # database request
   my $schema = $self->{schema};
-  my @sqla_args = ($source->db_from, $where);
+  my @sqla_args = ($meta_source->db_from, $where);
   my ($sql, @bind) = $schema->sql_abstract->delete(@sqla_args);
   $source_class->_debug($sql . " / " . join(", ", @bind) );
   my $method = $schema->dbi_prepare_method;
@@ -998,7 +1013,7 @@ sub _maybe_inject_primary_key {
   my $where = $args->{-where};
   if (ref $where eq 'ARRAY' && $where->[0] eq '-key') {
     # got the primary key in the form -where => [-key => @pk_vals]
-    my @pk_cols = $self->{source}->primary_key;
+    my @pk_cols = $self->{meta_source}->primary_key;
     my @pk_vals = @{$where}[1 .. $#$where];
     @pk_cols == @pk_vals
       or croak sprintf "got %d cols in primary key, expected %d",
@@ -1018,44 +1033,7 @@ __END__
 
 DBIx::DataModel::Statement - DBIx::DataModel statement objects
 
-=head1 SYNOPSIS
-
-  # statement creation
-  my $stmt = DBIx::DataModel::Statement->new($source, @args);
-  # or
-  my $stmt = My::Table->select(-resultAs => 'statement');
-  #or
-  my $stmt = My::Table->join(qw/role1 role2 .../);
-
-  # statement refinement (adding clauses)
-  $stmt->refine(-where => {col1 => {">" => 123},
-                           col2 => "?foo"})     # ?foo is a named placeholder
-  $stmt->refine(-where => {col3 => 456,
-                           col4 => "?bar",
-                           col5 => {"<>" => "?foo"}},
-                -orderBy => ...);
-
-  # early binding for named placeholders
-  $stmt->bind(bar => 987);
-
-  # database prepare (with optional further refinements to the statement)
-  $stmt->prepare(-columns => qw/.../); 
-
-  # late binding for named placeholders
-  $stmt->bind(foo => 654);
-
-  # database execute (with optional further bindings)
-  $stmt->execute(foo => 321); 
-
-  # get the results
-  my $list = $stmt->all;
-  #or
-  while (my $row = $stmt->next) {
-    ...
-  }
-
 =head1 DESCRIPTION
-
 
 The purpose of a I<statement> object is to retrieve rows from the
 database and bless them as objects of appropriate classes.
@@ -1071,281 +1049,21 @@ the manual (purpose, lifecycle, etc.).
 
 =head2 new
 
-  my $statement = DBIx::DataModel::Statement->new($source, @args);
-
-Creates a new statement. The first parameter C<$source> is a 
-subclass of L<DBIx::DataModel::Source|DBIx::DataModel::Source>.
-Other parameters are optional and directly transmitted
-to L</refine>.
-[TODO : new $schema arg]
-
-
-=head2 clone
-
-Returns a copy of the statement. This is only possible
-when in states C<new> or C<sqlized>, i.e. before
-a DBI sth has been created.
-
-
-=head2 status
-
-Returns the current status or the statement. This is a
-L<dualvar|Scalar::Util/dualvar> with a
-string component (C<new>, C<sqlized>, C<prepared>, C<executed>)
-and an integer component (1, 2, 3, 4).
-
-=head2 sql
-
-  $sql         = $statement->sql;
-  (sql, @bind) = $statement->sql;
-
-In scalar context, returns the SQL code for this
-statement (or C<undef> if the statement is not
-yet C<sqlized>). 
-
-In list context, returns the SQL code followed
-by the bind values, suitable for a call to 
-L<DBI/execute>.
-
-Obviously, this method is only available after the
-statement has been sqlized (through direct call 
-to the L</sqlize> method, or indirect call via
-L</prepare>, L</execute> or L</select>).
-
-
-=head2 bind
-
-  $statement->bind(foo => 123, bar => 456);
-  $statement->bind({foo => 123, bar => 456}); # equivalent to above
-
-  $statement->bind(0 => 123, 1 => 456);
-  $statement->bind([123, 456]);               # equivalent to above
-
-Takes a list of bindings (name-value pairs), and associates
-them to placeholders within the statement. If successive
-bindings occur on the same named placeholder, the last
-value silently overrides previous values. If a binding
-has no corresponding named placeholder, it is ignored.
-Names can be any string (including numbers), except
-reserved words C<limit> and C<offset>, which have a special
-use for pagination.
-
-
-The list may alternatively be given as a hashref. This 
-is convenient for example in situations like
-
-  my $statement = $source->some_method;
-  foreach my $row (@{$source->select}) {
-    my $subrows = $statement->bind($row)->select;
-  }
-
-The list may also be given as an
-arrayref; this is equivalent to a hashref
-in which keys are positions within the array.
-
-Finally, there is a ternary form 
-of C<bind> for passing DBI-specific arguments.
-
-  use DBI qw/:sql_types/;
-  $statement->bind(foo => $val, {TYPE => SQL_INTEGER});
-
-See L<DBI/"bind_param"> for explanations.
-
-
-=head2 refine
-
-  $statement->refine(%args);
-
-Set up some named parameters on the statement, that
-will be used later by the C<select> method (see
-that method for a complete list of available parameters).
-
-The main use of C<refine> is to set up some additional
-C<-where> conditions, like in 
-
-  $statement->refine(-where => {col1 => $value1, col2 => {">" => $value2}});
-
-These conditions are accumulated into the statement,
-implicitly combined as an AND, until
-generation of SQL through the C<sqlize> method.
-After this step, no further refinement is allowed.
-
-The C<-where> parameter is the only one with a special 
-combinatory logic.
-Other named parameters to C<refine>, like C<-columns>, C<-orderBy>, 
-etc., are simply stored into the statement, for later
-use by the C<select> method; the latest specified value overrides
-any previous value.
-
-=head2 sqlize
-
-  $statement->sqlize(@args);
-
-Generates SQL from all parameters accumulated so far in the statement.
-The statement switches from state C<new> to state C<sqlized>,
-which forbids any further refinement of the statement
-(but does not forbid further bindings).
-
-Arguments are optional, and are just a shortcut instead of writing
-
-  $statement->refine(@args)->sqlize;
-
-=head2 prepare
-
-  $statement->prepare(@args);
-
-Method C<sqlized> is called automatically if necessary.
-Then the SQL is sent to the database, and the returned DBI C<sth>
-is stored internally within the statement.
-The state switches to "prepared".
-
-Arguments are optional, and are just a shortcut instead of writing
-
-  $statement->sqlize(@args)->prepare;
-
-
-=head2 execute
-
-  $statement->execute(@bindings);
-
-Translates the internal named bindings into positional
-bindings, calls L<DBI/execute> on the internal C<sth>, 
-and applies the C<-preExec> and C<-postExec> callbacks 
-if necessary.
-The state switches to "executed".
-
-Arguments are optional, and are just a shortcut instead of writing
-
-  $statement->bind(@bindings)->execute;
-
-An executed statement can be executed again, possibly with some 
-different bindings. When this happens, the internal result
-set is reset, and fresh data rows can be retrieved through 
-the L</next> or L</all> methods.
-
-
-=head2 select
-
-This is the frontend method to most methods above: it will
-automatically take the statement through the necessary
-state transitions, passing appropriate arguments
-at each step. The C<select> API is complex and is fully 
-described in L<DBIx::DataModel::Doc::Reference/select>.
-
-=head2 rowCount
-
-Returns the number of rows corresponding to the current
-executed statement. Raises an exception if the statement
-is not in state "executed".
-
-Note : usually this involves an additional call to 
-the database (C<SELECT COUNT(*) FROM ...>), unless
-the database driver implements a specific method 
-for counting rows (see for example 
-L<DBIx::DataModel::Statement::JDBC>).
-
-=head2 rowNum
-
-Returns the index number of the next row to be fetched
-(starting at C<< $self->offset >>, or 0 by default).
-
-
-=head2 next
-
-  while (my $row = $statement->next) {...}
-
-  my $slice_arrayref = $statement->next(10);
-
-If called without argument, returns the next data row, or
-C<undef> if there are no more data rows.
-If called with a numeric argument, attempts to retrieve
-that number of rows, and returns an arrayref; the size
-of the array may be smaller than required, if there were
-no more data rows. The numeric argument is forbidden 
-on fast statements (i.e. when L</reuseRow> has been called).
-
-Each row is blessed into an object of the proper class,
-and is passed to the C<-postBless> callback (if applicable).
-
-
-=head2 all
-
-  my $rows = $statement->all;
-
-Similar to the C<next> method, but 
-returns an arrayref containing all remaining rows.
-This method is forbidden on fast statements
-(i.e. when L</reuseRow> has been called).
-
-
-
-
-=head2 pageSize
-
-Returns the page size (requested number of rows), as it was set 
-through the C<-pageSize> argument to C<refine()> or C<select()>.
-
-=head2 pageIndex
-
-Returns the current page index (starting at 1).
-Always returns 1 if no pagination is activated
-(no C<-pageSize> argument was provided).
-
-=head2 offset
-
-Returns the current I<requested> row offset (starting at 0).
-This offset changes when a request is made to go to another page;
-but it does not change when retrieving successive rows through the 
-L</next> method.
-
-=head2 pageCount
-
-Calls L</rowCount> to get the total number of rows
-for the current statement, and then computes the
-total number of pages.
-
-=head2 gotoPage
-
-  $statement->gotoPage($pageIndex);
-
-Goes to the beginning of the specified page; usually this
-involves a new call to L</execute>, unless the current
-statement has methods to scroll through the result set
-(see for example L<DBIx::DataModel::Statement::JDBC>).
-
-Like for Perl arrays, a negative index is interpreted
-as going backwards from the last page.
-
-
-=head2 shiftPages
-
-  $statement->shiftPages($delta);
-
-Goes to the beginning of the page corresponding to
-the current page index + C<$delta>.
-
-=head2 pageBoundaries
-
-  my ($first, $last) = $statement->pageBoundaries;
-
-Returns the indices of first and last rows on the current page.
-These numbers are given in "user coordinates", i.e. starting
-at 1, not 0 : so if C<-pageSize> is 10 and C<-pageIndex> is 
-3, the boundaries are 21 / 30, while technically the current
-offset is 20. On the last page, the C<$last> index corresponds
-to C<rowCount> (so C<$last - $first> is not always equal
-to C<pageSize + 1>).
-
-=head2 pageRows
-
-Returns an arrayref of rows corresponding to the current page
-(maximum C<-pageSize> rows).
-
-=head2 reuseRow
-
-Creates an internal memory location that will be reused
-for each row retrieved from the database; this is the
-implementation for C<< select(-resultAs => "fast_statement") >>.
+  my $statement 
+    = DBIx::DataModel::Statement->new($meta_source, $schema, %options);
+
+This is the statement constructor; C<$meta_source> is an
+instance of L<DBIx::DataModel::Meta::Source> (either
+a meta-table or a meta-join), and C<schema> is an instance
+of L<DBIx::DataModel::Schema>. If present, C<%options> are delegated
+to the L<refine()|DBIx::DataModel::Doc::Reference/refine()> method.
+
+Explicit calls to the statement constructor are exceptional;
+the usual way to create a statement is through a schema's 
+L<table()|DBIx::DataModel::Doc::Reference/Schema::table()>
+or 
+L<join()|DBIx::DataModel::Doc::Reference/Schema::join()>
+method.
 
 
 

@@ -41,7 +41,8 @@ SKIP:
     # do the following in an eval() to make sure that _exit is called anyway
     eval {
       my $statement  = HR->join(qw/Employee activities department/);
-      my $join_meta  = $statement->{source};
+
+      my $join_meta  = $statement->meta_source;
       my $join_class = $join_meta->class;
       my @records = map {bless {"foo$_" => "bar$_"}, $join_class} 1..3;
       my $isa     = \@{$join_class . "::ISA"};

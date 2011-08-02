@@ -95,6 +95,15 @@ the client program. We decided to use the suffixes
 C<_id> for auto-generated keys, and C<_code> for user-supplied
 codes.
 
+All examples in this document use I<single-schema> mode, which
+is the simplest way to work with C<DBIx::DataModel>. 
+If your application needs to simultaneously work with several databases
+that share the same schema structure (like for example when
+transferring data between various sources), then you need
+to work in I<multi-schema> mode; explanations are provided
+L<DBIx::DataModel::Doc::Reference/"SCHEMA METHODS">.
+
+
 =head1 DECLARE SCHEMA AND TABLES
 
 C<DBIx::DataModel> needs to acquire some knowledge about 
@@ -105,10 +114,19 @@ by using
 L<DBIx::DataModel::Schema::Generator|DBIx::DataModel::Schema::Generator>
 to automatically create a skeleton of these declarations.
 
+First load C<DBIx::DataModel> :
 
-First declare a I<schema> :
+  use DBIx::DataModel -compability => 2.0;
 
-  use DBIx::DataModel;
+The C<-compatibility> argument tells that we don't need any compatibility 
+with versions prior to 2.0. By default, a compatibility layer for 
+version 1.0 is automatically loaded, in order not to break previous
+programs; but here, since we start a new application, that layer is not
+needed, and therefore we will avoid polluting our symbol tables with
+unnecessary code.
+
+Now define a I<schema> :
+
   DBIx::DataModel->Schema('HR');
 
 Here we have chosen a simple acronym C<HR> as the schema name, but it 
@@ -143,22 +161,21 @@ to see and enter dates of shape C<dd.mm.yyyy>. Insert of converting
 back and forth within the client code, it's easier to do it at the ORM
 level. So we define conversion routines within a "Date" column type
 
-  HR->ColumnType(Date => 
+  HR->Type(Date => 
      fromDB => sub {$_[0] =~ s/(\d\d\d\d)-(\d\d)-(\d\d)/$3.$2.$1/   if $_[0]},
      toDB   => sub {$_[0] =~ s/(\d\d)\.(\d\d)\.(\d\d\d\d)/$3-$2-$1/ if $_[0]},
-     validate => sub {$_[0] =~ m/\d\d\.\d\d\.\d\d\d\d/});
+     validate => sub {$_[0] =~ m/\d\d\.\d\d\.\d\d\d\d/},
+   );
 
-and then apply this type to the appropriate columns
+and then apply this type to the appropriate columns, by calling the 
+L<define_column_type()|DBIx::DataModel::Doc::Reference/define_column_type()>
+method on the I<meta-table> objects associated with our tables.
 
-  HR::Employee->ColumnType(Date => qw/d_birth/);
-  HR::Activity->ColumnType(Date => qw/d_begin d_end/);
+  HR::Employee->metadm->define_column_type(Date => qw/d_birth/);
+  HR::Activity->metadm->define_column_type(Date => qw/d_begin d_end/);
 
 Here we just perform scalar conversions; another design choice 
 could be to "inflate" the data to some kind of Perl objects.
-
-Observe that C<ColumnType> is overloaded : when invoked on a schema, it
-I<defines> a column type; when invoked on a table, it
-I<applies> the column type to some columns.
 
 =head1 DECLARE ASSOCIATIONS
 
@@ -238,7 +255,9 @@ The main difference is in C<insert> and C<delete> methods, which will
 be able to perform more complex operations on data trees : for example 
 it will be possible in one method call to insert an employee together
 with its activities. Compositions also support auto-expansion 
-of data trees through the L<AutoExpand|/"AutoExpand"> method.
+of data trees through the 
+L<auto_expand()|DBIx::DataModel::Doc::Reference/auto_expand()>
+method.
 
 
 =head2 Many-to-many associations
@@ -355,9 +374,9 @@ or maybe we want something more specific :
   my @columns  = qw/firstname lastname/;
   my %criteria = (lastname => {-like => 'B%'});
   my $some_employees 
-     = HR::Employee->select(-columns => \@columns,
-                            -where   => \%criteria,
-                            -orderBy => 'd_birth');
+     = HR::Employee->select(-columns  => \@columns,
+                            -where    => \%criteria,
+                            -order_by => 'd_birth');
 
 From a given object, role methods allow us to get associated
 objects :
@@ -374,8 +393,8 @@ C<select()> method :
 
   my @columns = qw/d_begin d_end/;
   my %criteria = (d_end => undef);
-  my $current_activities = $someEmp->activities(-columns => \@columns,
-                                                -where   => \%criteria);
+  my $current_activities = $some_emp->activities(-columns => \@columns,
+                                                 -where   => \%criteria);
 
 And it is possible to join on several roles at once:
 
@@ -385,5 +404,3 @@ And it is possible to join on several roles at once:
 
 This concludes our short tutorial. More examples are given
 in the L<Reference|DBIx::DataModel::Doc::Reference> chapter.
-
-

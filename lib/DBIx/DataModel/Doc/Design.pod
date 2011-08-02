@@ -8,9 +8,8 @@ DBIx::DataModel::Doc::Design - Architecture and design principles
 B<WARNING> : Version 2 of C<DBIx::DataModel> is a major refactoring
 from versions 1.*, with a number of incompatible changes in the API
 (classes renamed, arguments renamed or reorganized, etc. -- see
-L<DBIx::DataModel::Doc::Delta_2.0>). The documentation below has not
-been fully updated yet to reflect these changes.
-
+L<DBIx::DataModel::Doc::Delta_2.0>). The documentation below has 
+B<not been fully updated yet> to reflect these changes.
 
 
 This chapter is part of the C<DBIx::DataModel> manual.
@@ -62,7 +61,8 @@ to directly start using the framework.
 
 =head2 Classes
 
-The following picture shows the class hierarchy :
+The following picture shows the main classes in C<DBIx::DataModel> 
+lass hierarchy :
 
          FRAMEWORK CLASSES
          =================
@@ -71,32 +71,27 @@ The following picture shows the class hierarchy :
    | DBIx::DataModel |               | DBIx::DataModel::Statement |
    +-----------------+               +----------------------------+
 
-                        +-----------------------+
-                        | DBIx::DataModel::Base |
-                        +-----------------------+
-                            /                \
-                           /                  \
    +-------------------------+   +-------------------------+
    | DBIx::DataModel::Schema |	 | DBIx::DataModel::Source |
-   +-------------------------+ 	 +-------------------------+
+   +--^----------------------+ 	 +---^-----------------^---+
       |                             /                   \
       |                            /                     \
-      |     +------------------------+  +-----------------------+
-      |     | DBIx::DataModel::Table |  | DBIx::DataModel::View |
-      |     +------------------------+  +-----------------------+
+      |     +---------------------^--+  +-----------------^-----+
+      |     | DBIx::DataModel::Table |  | DBIx::DataModel::Join |
+      |     +-----------------^------+  +--------------------^--+
       |                       |                             /
   ====|=======================|============================/=======
       |  APPLICATION CLASSES  |                           /
       |  ===================  |                          /
       |                       |                         /
-  +----------+     +-------------------+               /
+  +---^------+     +----------^--------+               /
   | MySchema |     | MySchema::Table_n |-+            /
-  +----------+     +--+----------------+ |-+         /
-                      +--+-------\-------+ |        /
-                         +--------\--\-----+       /
+  +----------+     +--+---------^------+ |-+         /
+                      +--+-------\--^----+ |        /
+                         +--------\--\--^--+       /
                                    \  \  \        /
-                                  +---------------------+
-                                  | auto_generated_view +-+
+                                  +-^--^--^------^------+
+                                  | auto_generated_join +-+
                                   +--+------------------+ |-+
                                      +--+-----------------+ |
                                         +-------------------+
@@ -124,9 +119,10 @@ in most cases only one such class will be needed,
 unless the application talks to several databases
 simultaneously.
 
-Subclasses of L<DBIx::DataModel::Table|DBIx::DataModel::Table>
+Subclasses of 
+L<DBIx::DataModel::Source::Table|DBIx::DataModel::Source::Table>
 represent tables in the database and are created by the
-L<Table|DBIx::DataModel::Doc::Reference/"Table">
+L<Table()|DBIx::DataModel::Doc::Reference/"Table()">
 method in L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>.
 
 Subclasses of L<DBIx::DataModel::View|DBIx::DataModel::View>
@@ -313,18 +309,18 @@ directly performed within the database). That is, given a declaration
 
 we can call
 
-  my activities = $anEmployee->activities
+  my activities = $an_employee->activities
 
 which will implicitly perform a 
 
-  SELECT * FROM Activity WHERE emp_id = $anEmployee->{emp_id}
+  SELECT * FROM Activity WHERE emp_id = $an_employee->{emp_id}
 
 The role method can also accept additional parameters
-in L<SQL::Abstract> format, exactly like the 
+in L<SQL::Abstract::More> format, exactly like the 
 L<select()|/"select"> method. So for example
 
-  my $activities = $anEmployee->activities(-columns => [qw/act_name salary/],
-                                           -where   => {is_active => 'Y'});
+  my $activities = $an_employee->activities(-columns => [qw/act_name salary/],
+                                            -where   => {is_active => 'Y'});
 
 would perform the following SQL request :
 
@@ -1122,10 +1118,19 @@ C<DBIx::DataModel> by stating
 
 =head1 DEPENDENCIES
 
-C<DBIx::DataModel> only depends on L<DBI|DBI> and
-L<SQL::Abstract|SQL::Abstract>, so
-it should be very easy to install even without help of tools
-like C<ppm>, C<cpan> or C<cpanp>.
+C<DBIx::DataModel> depends on
+
+=over 
+
+=item L<DBI|DBI>
+
+=item L<SQL::Abstract::More|SQL::Abstract::More>
+
+=back
+
+
+
+
 
 
 
@@ -1137,13 +1142,6 @@ like C<ppm>, C<cpan> or C<cpanp>.
 Here are answers to some design choices, in the form
 of a FAQ.
 
-=head2 Why camelCase method names ?
-
-Yes, I know. The "perlish way" would rather be
-C<apply_column_handler> instead of C<applyColumnHandlers>.
-At the time of the first release of C<DBIx::DataModel>,
-I was not aware of that, and now it would be inconvenient
-to change and deprecate half of the API.
 
 =head2 Global state in class variables ? Isn't that bad design ?
 
@@ -1346,3 +1344,12 @@ a future release C<DBIx::DataModel> :
 
  - update syntactic sugar 
     $class->update(-set => {hashref}, -where => [-key => @_])
+
+ - think about reuse of statements : either this should be forbidden,
+   or we need a way to do it cleanly, e.g
+
+      my $statement = $schema->table($name);
+      my $result1 = $statement->select(...);
+      $statement->clear;
+      my $result2 = $statement->select(...);
+    

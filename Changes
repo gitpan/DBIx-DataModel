@@ -1,6 +1,9 @@
 Revision history for Perl extension DBIx::DataModel.
 
-v1.99_01
+v1.99_02 02.08.2011
+  - many updates in doc (not totally finished yet)
+
+v1.99_01 31.07.2011
   MAJOR REVISION, see Doc/Delta_2.0.pod
   - new metaclass / reflection layer
   - use base ==> use parent

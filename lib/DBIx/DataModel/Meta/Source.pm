@@ -81,44 +81,6 @@ sub _new_meta_source { # called by new() in Meta::Table and Meta::Join
 }
 
 
-
-sub define_navigation_method {
-  my ($self, $method_name, @roles) = @_;
-  @roles or croak "define_navigation_method: not enough arguments";
-
-  # last arg may be a hashref of parameters to be passed to select()
-  my $pre_args;
-  $pre_args = pop @roles if ref $roles[-1];
-
-  # build the method body
-  my $method_body = sub {
-    my ($self, @args) = @_;
-
-    # if called without args, and just one role, and that role 
-    # was previously expanded, then return the cached version
-    if (@roles == 1 && !@args) {
-      my $cached = $self->{$roles[0]};
-      return $cached if $cached;
-    }
-
-    # otherwise, build a query
-    unshift @args, %$pre_args if $pre_args;
-    my $statement = $self->join(@roles); # Source::join, not Schema::join
-
-    # return either the resulting rows, or the query statement
-    return ref $self ? $statement->select(@args)   # when instance method
-                     : $statement->refine(@args);  # when class method
-  };
-
-  # install the method
-  DBIx::DataModel::Meta::Utils->define_method(
-    class => $self->{class},
-    name  => $method_name,
-    body  => $method_body,
-   );
-}
-
-
 #----------------------------------------------------------------------
 # RUN-TIME METHODS
 #----------------------------------------------------------------------

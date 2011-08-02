@@ -31,7 +31,8 @@ package DBIx::DataModel::Source;
 #----------------------------------------------------------------------
 
 *selectFromRoles = \&join;
-*MethodFromRoles = \&DBIx::DataModel::Meta::Source::define_navigation_method;
+*MethodFromRoles 
+  = \&DBIx::DataModel::Meta::Source::Table::define_navigation_method;
 *table           = \&db_from;
 
 #----------------------------------------------------------------------

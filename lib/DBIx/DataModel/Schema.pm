@@ -59,7 +59,7 @@ sub new {
 
 
 # proxy methods, forwarded to the meta-schema
-foreach my $method (qw/Table View Type Association Composition/) {
+foreach my $method (qw/Table View Association Composition Type/) {
   no strict 'refs';
   *{$method} = sub {
     my $class = shift;
@@ -75,9 +75,9 @@ sub singleton {
 
   if (!$metadm->{singleton}) {
     not exists $metadm->{singleton}
-      or croak "can't call class methods on Sources because Schema is not a "
-             . "singleton (Schema->new() was called); instead, use "
-             . "\$schema->table(\$name)->method(...)";
+      or croak "attempt to call a class method in single-schema mode after "
+             . "Schema::new() has been called; instead, use an instance "
+             . "method : \$schema->table(\$name)->method(...)";
     $metadm->{singleton} = $class->new(@_);
     $metadm->{singleton}{is_singleton} = 1;
   }

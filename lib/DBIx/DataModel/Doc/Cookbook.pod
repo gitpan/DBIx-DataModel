@@ -61,16 +61,16 @@ the database into a Perl object :
 
   # declare column type
   use Date::Simple;
-  $schema->ColumnType(Date_simple => 
+  $schema->Type(Date_simple => 
     fromDB => sub {Date::Simple->new($_[0]) if $_[0] },
     toDB   => sub {$_[0] = $_[0]->as_str    if $_[0] },
   );
   
   # apply column type to columns
-  My::Table1->ColumnType(Date_simple => qw/d_start d_end/);
-  My::Table2->ColumnType(Date_simple => qw/d_birth/);
+  My::Table1->metadm->define_column_type(Date_simple => qw/d_start d_end/);
+  My::Table2->metadm->define_column_type(Date_simple => qw/d_birth/);
 
-B<Caveat>: the C<fromDB> / C<toDB> functions do not apply
+B<Caveat>: the C<from_DB> / C<to_DB> functions do not apply
 automatically within C<-where> conditions. So the following
 would not work :
 
@@ -90,7 +90,9 @@ which column types to apply, so you have to do it yourself :
 =head2 Schema versioning
 
 Currently C<DBIx::DataModel> has no specific support
-for schema versioning. Choose L<DBIx::Class> instead.
+for schema versioning. See CPAN module L<DBIx::VersionedSchema>,
+or switch to the L<DBIx::Class> ORM, that has good support for
+schema versioning.
 
 
 =head1 DATA RETRIEVAL
@@ -100,21 +102,21 @@ for schema versioning. Choose L<DBIx::Class> instead.
 Use normal SQL syntax for aggregators, and give them
 column aliases (with a vertical bar C<|>) in order to retrieve the results.
 
-  my $row = $source->select(-columns => [qw/MAX(col1)|max_col1
-                                            AVG(col2)|foo
-                                            COUNT(DISTINCT(col3))|bar/],
-                            -where    => ...,
-                            -resultAs => 'firstrow');
+  my $row = $source->select(-columns   => [qw/MAX(col1)|max_col1
+                                              AVG(col2)|foo
+                                              COUNT(DISTINCT(col3))|bar/],
+                            -where     => ...,
+                            -result_as => 'firstrow');
   print "max is : $row->{max_col1}, average is $row->{foo}";
 
 Or you can dispense with column aliases, and retrieve the results
 directly into an arrayref, using C<< -resultAs => 'flat_arrayref' >> :
 
-  my $array_ref = $source->select(-columns => [qw/MAX(col1)
-                                                 AVG(col2)
-                                                 COUNT(DISTINCT(col3))/],
-                                  -where    => ...,
-                                  -resultAs => 'flat_arrayref');
+  my $array_ref = $source->select(-columns   => [qw/MAX(col1)
+                                                   AVG(col2)
+                                                   COUNT(DISTINCT(col3))/],
+                                  -where     => ...,
+                                  -result_as => 'flat_arrayref');
   my ($max_col1, $avg_col2, $count_col3) = @$array_ref;
 
 B<Caveat>: currently, C<fromDB> handlers do not apply to aggregator functions
@@ -134,7 +136,7 @@ Like above: normal SQL syntax and column aliases.
 
 =head2 Nested queries
 
-  my $subquery = $source1->select(..., -resultAs => 'subquery');
+  my $subquery = $source1->select(..., -result_as => 'subquery');
   my $rows     = $source2->select(
       -columns => ...,
       -where   => {foo => 123, bar => {-not_in => $subquery}}
@@ -195,14 +197,26 @@ a C<where> clause :
 =head2 Nested transaction
 
   $schema->do_transaction(sub {
-    do_something;
-    $schema->do_transaction(sub { 
-      some_nested_code();
-    });
-    $schema->do_transaction(sub { 
-      some_other_nested_code();
-   });
+    do_something();
+    $schema->do_transaction(sub { some_nested_code();       });
+    $schema->do_transaction(sub { some_other_nested_code(); });
   });
+
+=head2 Nested transaction involving another database
+
+  $schema->dbh($initial_dbh);
+  $schema->do_transaction(sub {
+
+    # start working in $initial_dbh
+    do_something();
+
+    # now some work in $other_dbh
+    $schema->do_transaction(sub { some_nested_code();       }, $other_dbh);
+
+    # here, implicitly we are back in $initial_dbh
+    $schema->do_transaction(sub { some_other_nested_code(); });
+  });
+  # commits in both $initial_dbh and $other_dbh are performed here
 
 
 =head2 Generating random keys
@@ -238,7 +252,7 @@ record. See example in
 L<insert() reference|DBIx::DataModel::Doc::Reference/"insert">.
 The precondition for this to work is that the 
 relationship between the two classes should be a 
-L<Composition|DBIx::DataModel::Doc::Reference/"Composition">.
+L<Composition|DBIx::DataModel::Doc::Reference/"Composition()">.
 A datastructure containing the keys of all generated records
 can be retrieved by using the option 
 
@@ -247,7 +261,7 @@ can be retrieved by using the option
 =head2 Cascaded delete
 
   # first gather information tree from the database
-  my $author = Author->fetch($author_id);
+  my $author = My::DB::Author->fetch($author_id);
   my $distribs = $author->expand('distributions');
   $_->expand('modules') foreach @$distribs;
   
@@ -255,7 +269,7 @@ can be retrieved by using the option
   $author->delete;
 
 This only works if the relationship between classes is a 
-L<Composition|DBIx::DataModel::Doc::Reference/"Composition">.
+L<Composition|DBIx::DataModel::Doc::Reference/"Composition()">.
 The C<expand> operations retrieve related records and add them
 into a tree in memory. Then C<delete> removes from the database
 all records found in the tree; therefore this is not a "true" cascaded 
@@ -267,7 +281,7 @@ database, rather than at the ORM layer.
 
 =head2 Timestamp validation
 
-[WRITE EXAMPLE ]
+[TODO: WRITE EXAMPLE ]
 
 (make sure that the record was not touched between the time
 it was presented to the user (display form) and the time

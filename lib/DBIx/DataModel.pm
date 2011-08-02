@@ -9,7 +9,7 @@ use strict;
 use DBIx::DataModel::Meta::Schema;
 use MRO::Compat  (); # don't want to call MRO::Compat::import()
 
-our $VERSION       = '1.99_01'; # dev release
+our $VERSION       = '1.99_02'; # dev release
 $VERSION = eval $VERSION if $VERSION =~ /_/; # numify
 
 # compatibility setting : see import(); for the moment, automatic compat 1.0
@@ -436,6 +436,8 @@ at each iteration.
   my $list = My::Table->select(...);
   foreach my $obj (@$list) {
     my $related_rows = $statement->execute($obj)->all;
+    # or
+    my $related_rows = $statement->bind($obj)->select;
     ... 
   }
 
