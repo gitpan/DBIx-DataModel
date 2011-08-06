@@ -9,7 +9,7 @@ use strict;
 use DBIx::DataModel::Meta::Schema;
 use MRO::Compat  (); # don't want to call MRO::Compat::import()
 
-our $VERSION       = '1.99_02'; # dev release
+our $VERSION       = '1.99_03'; # dev release
 $VERSION = eval $VERSION if $VERSION =~ /_/; # numify
 
 # compatibility setting : see import(); for the moment, automatic compat 1.0
@@ -701,6 +701,9 @@ statements (not included in the
 general L<REFERENCE|DBIx::DataModel::Doc::Reference> chapter).
 
 =back
+
+Presentation slides are also available at
+L<http://www.slideshare.net/ldami/dbix-datamodel-endetail>
 
 =head1 SIDE-EFFECTS
 

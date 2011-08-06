@@ -49,6 +49,9 @@ intend to extend the framework.
 
 =head1 PRIVATE METHODS
 
+
+
+
 =head2 _setClassData
 
   DBIx::DataModel::Base->_setClassData($subclass, $data_ref);

@@ -975,7 +975,6 @@ Client code rarely needs to call C<singleton()> explicitly; when
 in single-schema mode, method calls are usually expressed as
 class methods, and the singleton is retrieved automatically.
 
-
 =head3 dbh()
 
   my $dbh = DBI::connect(...);
@@ -1115,6 +1114,14 @@ This is the recommended way to reach a table from a schema.
 The C<$table_name> is the Perl name that was declared in L</define_table()>,
 not the database name.
 
+The method name is (intentionally!) misleading : instead of returning
+a I<table> object or I<meta_table> object, it returns a I<statement>;
+however the statement delegates many methods to the table and therefore
+can mimic it (actually, it works like a kind of proxy). An intermediate
+statement object is needed for holding a reference to the schema : without
+this important piece of information, the table has no connection to the
+database and therefore cannot fetch any data.
+
 When in single-schema mode, this call be replaced by a direct call
 to the table class: so for example, if we have a schema class
 C<HR> containing a table C<Employee>, the following calls are equivalent :
@@ -1196,6 +1203,10 @@ intermediate savepoints.
 
 =head2 Schema utility methods
 
+=head3 Schema::metadm()
+
+Returns the meta-schema instance associated with the invocant.
+
 =head3 unbless()
 
   $schema->unbless($obj1, $obj2, ...);
@@ -1206,6 +1217,9 @@ from its arguments : these become plain Perl hashrefs, arrayrefs or scalars.
 This may be useful if the datatree returned by a C<select(..) / expand(..) >
 needs to be exported through an external module that only considers
 plain datastructures; this is the case for example with L<YAML::Syck/Dump>.
+
+
+
 
 =head2 Schema class methods, delegated to the meta-schema
 
@@ -2230,6 +2244,11 @@ in the join; in case of name conflics, the latest table takes precedence.
 Again, it is possible to use fully qualified method names if necessary.
 
 
+=head2 Source::metadm()
+
+Returns the meta-source instance associated with the invocant.
+
+
 =head2 schema()
 
 Returns the instance of L<DBIx::DataModel::Schema> from which
@@ -2390,13 +2409,13 @@ calling C<Statement::delete()>.
 Starting from a given table, returns a reference to a statement that
 will select a collection of data rows from associated tables,
 performing the appropriate joins.  Internally this is implemented
-throught the C</define_join()> method, with an additional join
+throught the C</define_join()> method, with an additional C<-where>
 criteria to constrain on the primary key(s) of C<$table_class>.  That
 statement cannot be executed yet, because the values of the primary
 key are not known until we have an instance of C<$table_class>; but the
 statement can already be
-L<prepare|DBIx::DataModel::Statement/prepare>d.  Later on, we can
-L<execute|DBIx::DataModel::Statement/execute> the statement by binding
+L<prepare|/prepare()>d.  Later on, we can
+L<execute|/execute()> the statement by binding
 it to an instance of C<$table_class> :
 
    my $obj          = $table_class->fetch(...);
@@ -2421,14 +2440,36 @@ will generate
 
 =head2 class methods delegated to the Statement class
 
-When in single-schema mode, the following class methods
+When in single-schema mode, some class methods
 are delegated to a statement created on the fly, 
-using the L</singleton()> method :
-C<select>, C<fetch>, C<fetch_cached>, C<bless_from_DB>.
-Hence it is possible to write requests like
+using the L</singleton()> method; hence it is possible to write requests 
+like
 
   my $result = HR::Employee->select(...);
 
+=head3 Source::select()
+
+  my $result = $source->select(%args);
+
+Equivalent to 
+
+  my $metadm      = $source->metadm;
+  my $meta_schema = $metadm->schema;
+  my $schema      = $meta_schema->class->singleton;
+  my $statement   = $meta_schema->statement_class->new($metadm, $schema);
+  $statement->select(%args);
+
+=head3 Source::fetch()
+
+similar to C<select()> above
+
+=head3 Source::fetch_cached()
+
+similar to C<select()> above
+
+=head3 Source::bless_from_DB()
+
+similar to C<select()> above
 
 =head1 META-SCHEMA NAVIGATION
 

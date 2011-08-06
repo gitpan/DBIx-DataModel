@@ -431,7 +431,7 @@ my $orig_refine = \&refine;
 
 sub ColumnType {
   my ($self, $typeName, @args) = @_;
-  $self->{source}->define_column_type($typeName, @args);
+  $self->{meta_source}->define_column_type($typeName, @args);
 }
 
 

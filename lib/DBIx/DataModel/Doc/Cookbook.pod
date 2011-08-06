@@ -54,6 +54,11 @@ a C<DBI> connection, a L<SQL::Translator> parser, or a
 C<DBIx::Class> schema. 
 See L<DBIx::DataModel::Schema::Generator|DBIx::DataModel::Schema::Generator>.
 
+=head2 Add custom methods into a generated table class
+
+[TODO : EXAMPLE]
+
+
 =head2 Object inflation/deflation
 
 Here is an example of inflating/deflating a scalar value from 
