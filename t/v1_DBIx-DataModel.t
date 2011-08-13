@@ -22,6 +22,8 @@ sub die_ok(&) {
   ok($err, $err);
 }
 
+
+
 use_ok("DBIx::DataModel", -compatibility=> 1.0);
 
 DBIx::DataModel->Schema('HR'); # Human Resources

@@ -490,9 +490,13 @@ joins through
   $schema->join(qw/FirstTable role1 role2 .../)
 
 One of the role names in the association can be
-anonymous (undef), but not both. If anonymous, there
+I<anonymous>, which is expressed by C<undef>, 
+by an empty string, or a string containing C<'0'>, 
+C<'none'>, or C<'---'>. If anonymous, there
 will be no Perl method and no possibility to join in that
 direction, so it defines a unidirectional association.
+Two anonymous roles in both directions are forbidden (because
+in that case the association would be useless).
 
 If several associations attempt to define the same role name in
 the same table, an exception is generated.
@@ -1122,9 +1126,10 @@ statement object is needed for holding a reference to the schema : without
 this important piece of information, the table has no connection to the
 database and therefore cannot fetch any data.
 
-When in single-schema mode, this call be replaced by a direct call
-to the table class: so for example, if we have a schema class
-C<HR> containing a table C<Employee>, the following calls are equivalent :
+When in single-schema mode, the C<table()> call can be replaced by a
+direct call to the table class: so for example, if we have a schema
+class C<HR> containing a table C<Employee>, the following calls are
+equivalent :
 
   $result = HR::Employee->select(...)
   $result = HR->table('Employee')->select(...)

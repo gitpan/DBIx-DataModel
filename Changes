@@ -1,5 +1,9 @@
 Revision history for Perl extension DBIx::DataModel.
 
+v1.99_04 13.08.2011
+  - fixed broken test on perl 5.8/5.10 (MRO::Compat loaded too late)
+  - yet more doc (Design.pod)
+
 v1.99_03 06.08.2011
   - Reference.pod finished. Still work to do on other pods.
 

@@ -48,7 +48,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "1.99_03"
+         "version" : "1.99_04"
       },
       "DBIx::DataModel::Compatibility::V0" : {
          "file" : "lib/DBIx/DataModel/Compatibility/V0.pm",
@@ -137,5 +137,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "1.99_03"
+   "version" : "1.99_04"
 }

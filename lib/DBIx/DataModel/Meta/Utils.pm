@@ -9,6 +9,8 @@ use Carp;
 use Module::Load         qw/load/;
 use Params::Validate     qw/validate SCALAR ARRAYREF CODEREF UNDEF BOOLEAN
                                      OBJECT HASHREF/;
+die "NO MRO::COMPAT" unless $INC{"MRO/Compat.pm"};
+
 use mro 'c3';
 use namespace::autoclean;
 
