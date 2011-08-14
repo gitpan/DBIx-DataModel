@@ -873,5 +873,5 @@ hasInvalidFields
 expand
 autoExpand
 document the tests !!
-
+select(-dbi_prepare_method => ..)
 

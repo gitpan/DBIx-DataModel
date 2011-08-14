@@ -75,7 +75,7 @@ sub _rawInsert {
   my @sqla_args   = ($metadm->db_from, \%values);
   push @sqla_args, {returning => $options{-returning}} if $use_returning;
   my ($sql, @bind) = $schema->sql_abstract->insert(@sqla_args);
-  $self->_debug($sql . " / " . join(", ", @bind) );
+  $self->schema->_debug($sql . " / " . join(", ", @bind) );
   my $sth = $schema->dbh->prepare($sql);
   $sth->execute(@bind);
 

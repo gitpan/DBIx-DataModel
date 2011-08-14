@@ -10,11 +10,11 @@ use MRO::Compat  (); # don't want to call MRO::Compat::import()
 
 use DBIx::DataModel::Meta::Schema;
 
-our $VERSION       = '1.99_04'; # dev release
+our $VERSION = '1.99_05'; # dev release
 $VERSION = eval $VERSION if $VERSION =~ /_/; # numify
 
 # compatibility setting : see import(); for the moment, automatic compat 1.0
-our $COMPATIBILITY = 1.0; 
+our $COMPATIBILITY = 1.0;
 # future : our $COMPATIBILITY = $VERSION;
 
 # Modules considered to belong to the same family for carp/croak (see L<Carp>).

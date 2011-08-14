@@ -36,6 +36,7 @@
             "MRO::Compat" : 0,
             "Module::Build" : 0,
             "Module::Load" : 0,
+            "Params::Validate" : 0,
             "SQL::Abstract::More" : 0,
             "Scalar::Util" : 0,
             "Storable" : 0,
@@ -48,7 +49,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "1.99_04"
+         "version" : "1.99_05"
       },
       "DBIx::DataModel::Compatibility::V0" : {
          "file" : "lib/DBIx/DataModel/Compatibility/V0.pm",
@@ -137,5 +138,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "1.99_04"
+   "version" : "1.99_05"
 }

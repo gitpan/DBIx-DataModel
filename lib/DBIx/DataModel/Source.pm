@@ -91,6 +91,8 @@ sub apply_column_handler {
 sub join {
   my ($self, $first_role, @other_roles) = @_;
 
+=begin MOVED_TO_STATEMENT
+
   # find first join information
   my $class = ref $self || $self;
   my $path  = $self->metadm->path($first_role)
@@ -114,27 +116,44 @@ sub join {
   my $statement = $meta_schema->statement_class->new($source, $schema);
   $statement->refine(-where => \%criteria);
 
+=end MOVED_TO_STATEMENT
+
+=cut
+
+
+  # call join() in ::Statement, to get another statement
+  my $metadm      = $self->metadm;
+  my $meta_schema = $metadm->schema;
+  my $schema      = $self->schema;
+  my $statement   = $meta_schema->statement_class->new($metadm, $schema);
+  $statement = $statement->join($first_role, @other_roles);
+
   # if called as an instance method
   if (ref $self) {
+    my $left_cols = $statement->{left_cols}
+      or die "statement had no {left_cols} entry";
 
     # check that all foreign keys are present
-    my $missing = join ", ", grep {not exists $self->{$_}} @left_cols;
+    my $missing = join ", ", grep {not exists $self->{$_}} @$left_cols;
     not $missing
       or croak "cannot follow role '$first_role': missing column '$missing'";
 
     # bind to foreign keys
-    $statement->bind(map {($_ => $self->{$_})} @left_cols);
+    $statement->bind(map {($_ => $self->{$_})} @$left_cols);
+  }
+
+  # else if called as class method
+  else {
+    if ($DBIx::DataModel::COMPATIBILITY > 1.99) {
+      carp 'join() was called as class method on a Table; instead, you should '
+         . 'call $schema->table($name)->join(...)';
+    }
   }
 
   return $statement;
 }
 
 
-
-
-sub has_invalid_columns {
-  croak "NOT IMPLEMENTED YET";
-}
 
 
 sub _delegate_to_statement_class { # also used by Source::Table.pm
@@ -152,23 +171,6 @@ sub _delegate_to_statement_class { # also used by Source::Table.pm
 
     return $statement->$method(@args);
   };
-}
-
-
-
-#----------------------------------------------------------------------
-# RUNTIME PRIVATE METHODS OR FUNCTIONS
-#----------------------------------------------------------------------
-
-
-
-sub _debug { # internal method to send debug messages
-  my ($self, $msg) = @_;
-  my $debug = $self->schema->debug;
-  if ($debug) {
-    if (ref $debug && $debug->can('debug')) { $debug->debug($msg) }
-    else                                    { carp $msg; }
-  }
 }
 
 
@@ -217,19 +219,6 @@ This module implements
 =item L<join|DBIx::DataModel::Doc::Reference/join>
 
 =item L<primKey|DBIx::DataModel::Doc::Reference/primKey>
-
-=back
-
-=head1 PRIVATE METHOD NAMES
-
-The following methods or functions are used
-internally by this module and 
-should be considered as reserved names, not to be
-redefined in subclasses :
-
-=over
-
-=item _debug
 
 =back
 

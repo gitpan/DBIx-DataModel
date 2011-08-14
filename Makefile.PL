@@ -12,6 +12,7 @@ WriteMakefile
                    'MRO::Compat' => 0,
                    'Module::Build' => 0,
                    'Module::Load' => 0,
+                   'Params::Validate' => 0,
                    'SQL::Abstract::More' => 0,
                    'Scalar::Util' => 0,
                    'Storable' => 0,

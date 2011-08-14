@@ -7,7 +7,7 @@ use warnings;
 use strict;
 use Carp;
 use List::Util       qw/min first/;
-use List::MoreUtils  qw/firstval/;
+use List::MoreUtils  qw/firstval any/;
 use Scalar::Util     qw/weaken refaddr reftype dualvar/;
 use Storable         qw/dclone freeze/;
 use Params::Validate qw/validate ARRAYREF HASHREF/;
@@ -33,9 +33,10 @@ use overload
 # sequence of states. Stored as dualvars for both ordering and printing
 use constant {
   NEW      => dualvar(1, "new"     ),
-  SQLIZED  => dualvar(2, "sqlized" ),
-  PREPARED => dualvar(3, "prepared"),
-  EXECUTED => dualvar(4, "executed"),
+  REFINED  => dualvar(2, "refined" ),
+  SQLIZED  => dualvar(3, "sqlized" ),
+  PREPARED => dualvar(4, "prepared"),
+  EXECUTED => dualvar(5, "executed"),
 };
 
 
@@ -86,6 +87,9 @@ sub metadm {
   my $self = shift;
   return $self->{meta_source};
 }
+
+
+
 
 
 # don't remember why this "clone()" method was ever created.
@@ -140,7 +144,7 @@ sub bind {
 
   # do bind (different behaviour according to status)
   my %args = @args;
-  if ($self->{status} == NEW) {
+  if ($self->{status} < SQLIZED) {
     while (my ($k, $v) = each %args) {
       $self->{pre_bound_params}{$k} = $v;
     }
@@ -160,8 +164,9 @@ sub bind {
 sub refine {
   my ($self, %more_args) = @_;
 
-  $self->{status} == NEW
+  $self->{status} <= REFINED
     or croak "can't refine() when in status $self->{status}";
+  $self->{status} = REFINED;
 
   my $args = $self->{args};
 
@@ -202,11 +207,29 @@ sub refine {
         last SWITCH;
       };
 
+      # -columns : store in $self->{args}{-columns}; can restrict previous list
+      /^-columns$/ and do {
+        my @cols = ref $v ? @$v : ($v);
+        if (my $old_cols = $args->{-columns}) {
+          unless (@$old_cols == 1 && $old_cols->[0] eq '*' ) {
+            foreach my $col (@cols) {
+              any {$_ eq $col} @$old_cols
+                or croak "can't restrict -columns on '$col' (was not in the) "
+                       . "previous -columns list";
+            }
+          }
+        }
+        $args->{-columns} = \@cols;
+        last SWITCH;
+      };
+
+
       # other args are just stored, will be used later
-      /^-(distinct  | columns  | order_by  | group_by   | having | for
-       |  result_as | post_SQL | pre_exec  | post_exec  | post_bless
-       |  limit     | offset   | page_size | page_index | column_types
-       |  prepare_attrs )$/x
+      /^-( order_by  | group_by | having    | for
+         | result_as | post_SQL | pre_exec  | post_exec  | post_bless
+         | limit     | offset   | page_size | page_index | column_types
+         | prepare_attrs        | dbi_prepare_method
+         )$/x
          and do {$args->{$k} = $v; last SWITCH};
 
       # otherwise
@@ -303,11 +326,12 @@ sub prepare {
     or croak "can't prepare() when in status $self->{status}";
 
   # log the statement and bind values
-  $meta_source->class->_debug("PREPARE $self->{sql} / @{$self->{bound_params}}");
+  $self->schema->_debug("PREPARE $self->{sql} / @{$self->{bound_params}}");
 
   # call the database
   my $dbh          = $self->{schema}->dbh or croak "Schema has no dbh";
-  my $method       = $self->{schema}->dbi_prepare_method;
+  my $method       = $self->{args}{-dbi_prepare_method}
+                  || $self->{schema}->dbi_prepare_method;
   my @prepare_args = ($self->{sql});
   push @prepare_args, $self->{prepare_attrs} if $self->{prepare_attrs};
   $self->{sth}  = $dbh->$method(@prepare_args);
@@ -349,7 +373,7 @@ sub execute {
   }
   not @unbound 
     or croak "unbound placeholders (probably a missing foreign key) : "
-            . join(", ", @unbound);
+            . CORE::join(", ", @unbound);
 
   # bind parameters and execute
   if ($self->{bind_param_args}) { # need to bind one by one because of DBI args
@@ -381,8 +405,8 @@ sub select {
 
   my $args = $self->{args}; # all combined args
 
-  my $callbacks = join ", ", grep {exists $args->{$_}} 
-                                  qw/-pre_exec -post_exec -post_bless/;
+  my $callbacks = CORE::join ", ", grep {exists $args->{$_}} 
+                                        qw/-pre_exec -post_exec -post_bless/;
 
  SWITCH:
   my ($result_as, @key_cols) 
@@ -908,7 +932,7 @@ sub update {
     my @sub_refs = grep {ref $to_set->{$_}} keys %$to_set;
     if (@sub_refs) {
       carp "data passed to update() contained nested references : ",
-            join ", ", @sub_refs;
+            CORE::join ", ", @sub_refs;
       delete $to_set->{@sub_refs};
       # TODO : recursive update (or insert)
     }
@@ -927,7 +951,7 @@ sub update {
   my $schema = $self->{schema};
   my @sqla_args = ($meta_source->db_from, $to_set, $where);
   my ($sql, @bind) = $schema->sql_abstract->update(@sqla_args);
-  $source_class->_debug($sql . " / " . join(", ", @bind) );
+  $schema->_debug($sql . " / " . CORE::join(", ", @bind) );
   my $method = $schema->dbi_prepare_method;
   my $sth    = $schema->dbh->$method($sql);
   $sth->execute(@bind);
@@ -994,11 +1018,55 @@ sub delete {
   my $schema = $self->{schema};
   my @sqla_args = ($meta_source->db_from, $where);
   my ($sql, @bind) = $schema->sql_abstract->delete(@sqla_args);
-  $source_class->_debug($sql . " / " . join(", ", @bind) );
+  $schema->_debug($sql . " / " . CORE::join(", ", @bind) );
   my $method = $schema->dbi_prepare_method;
   my $sth    = $schema->dbh->$method($sql);
   $sth->execute(@bind);
 }
+
+
+#----------------------------------------------------------------------
+# JOIN
+#----------------------------------------------------------------------
+
+sub join {
+  my ($self, $first_role, @other_roles) = @_;
+
+  $self->{status} == NEW
+    or croak "can't call sql() when in status $self->{status}";
+
+  # direct references to utility objects
+  my $schema      = $self->schema;
+  my $metadm      = $self->metadm;
+  my $meta_schema = $schema->metadm;
+
+  # find first join information
+  my $class  = $metadm->class;
+  my $path   = $metadm->path($first_role)
+    or croak "could not find role $first_role in $class";
+
+  # build search criteria on %$self from first join information
+  my (%criteria, @left_cols);
+  my $prefix;
+  while (my ($left_col, $right_col) = each %{$path->{on}}) {
+    $prefix ||= $schema->placeholder_prefix;
+    $criteria{$right_col} = "$prefix$left_col";
+    push @left_cols, $left_col;
+  }
+
+  # choose source (just a table or build a join) and then build a statement
+  my $source = @other_roles  ? $meta_schema->define_join($path->{to}{name},
+                                                         @other_roles)
+                             : $path->{to};
+  my $statement = $meta_schema->statement_class->new($source, $schema);
+  $statement->refine(-where => \%criteria);
+
+  # keep a reference to @left_cols so that Source::join can bind them
+  $statement->{left_cols} = \@left_cols;
+
+  return $statement;
+}
+
 
 
 #----------------------------------------------------------------------

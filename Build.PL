@@ -23,6 +23,7 @@ my $builder = Module::Build->new(
         'namespace::autoclean' => 0,
         'MRO::Compat'          => 0,
         'Module::Load'         => 0,
+        'Params::Validate'     => 0,
 
     },
     build_requires => {

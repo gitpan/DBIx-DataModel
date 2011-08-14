@@ -5,13 +5,6 @@ DBIx::DataModel::Doc::Design - Architecture and design principles
 
 =head1 DOCUMENTATION CONTEXT
 
-B<WARNING> : Version 2 of C<DBIx::DataModel> is a major refactoring
-from versions 1.*, with a number of incompatible changes in the API
-(classes renamed, arguments renamed or reorganized, etc. -- see
-L<DBIx::DataModel::Doc::Delta_2.0>). The documentation below has
-B<not been fully updated yet> to reflect these changes.
-
-
 This chapter is part of the C<DBIx::DataModel> manual.
 
 
@@ -55,6 +48,13 @@ C<DBIx::DataModel> is suitable for your context, or if you want to
 globally understand how it works. Skip it and jump to
 the L<QUICKSTART|DBIx::DataModel::Doc::Quickstart> chapter if you want
 to directly start using the framework.
+
+B<WARNING> : Since version 2.0, a number of important changes
+have been made in the API
+(classes renamed, arguments renamed or reorganized, etc. -- see
+L<DBIx::DataModel::Doc::Delta_2.0>). 
+If you need backwards compatibility, make sure to load the 
+L<1.0 compatibility layer|DBIx::DataModel::Compatibility::V1>.
 
 
 =head1 GENERAL ARCHITECTURE
@@ -299,17 +299,14 @@ L<select()|DBIx::DataModel::Doc::Reference/select()>.
 
 
 When applied to a 
-L<Table|DBIx::DataModel::Source::Table>
-or
-L<Join|DBIx::DataModel::Source::Join> subclass,
-L<join()|DBIx::DataModel::Doc::Reference/Table::join()> 
-is a class method that creates a statement to
-query one or several associated tables.
-The statement contains a condition to restrict the results
-according to the primary key of the initial table.
-That statement cannot be executed yet, because the values of the primary
-key are not known until we have an instance of the initial table; but the
-statement can already be
+L<Statement|DBIx::DataModel::Statement>
+L<join()|DBIx::DataModel::Doc::Reference/Statement::join()> 
+creates a new statement to query one or several tables associated with
+the datasource of the initial statement.  The new statement contains a
+condition to restrict the results according to the primary key of the
+initial table.  That statement cannot be executed yet, because the
+values of the primary key are not known until we have an instance of
+the initial table; but the statement can already be
 L<prepare|DBIx::DataModel::Doc::Reference/prepare()>d.  Later on, we can
 L<bind|DBIx::DataModel::Doc::Reference/bind()> the statement
 to an instance of the initial table, and then execute it.
@@ -677,14 +674,11 @@ and then can be selected.
 =item *
 
 L<define_navigation_method()|DBIx::DataModel::Doc::Reference/Table::define_navigation_method()>  :
-add a new method in a table, that will follow a list of roles .
-
+add a new method in a table, that will follow a list of roles; this is
+like compiling a C<join()> through several associated tables into 
+a method.
 
 =back
-
-
-
-
 
 
 
@@ -723,7 +717,7 @@ L<status()|DBIx::DataModel::Doc::Reference/status()>
 method tells which is the current state of the statement object.
 
 
-=head3 Status values
+=head3 Statement states
 
 =over
 
@@ -734,19 +728,28 @@ and already knows its I<datasource> (an instance of
 L<DBIx::DataModel::Meta::Source|DBIx::DataModel::Meta::Source>)
 and its I<schema> (an instance of 
 L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>).
-While in this state, the statement can
-accumulate parameters (C<-columns> to retrieve, C<-where> clauses
-that will end up in the generated SQL, etc.) through one or 
-several calls to the 
-L<refine()|DBIx::DataModel::Doc::Reference/refine()>
-method.  Early parameter binding may also occur through the
-L<bind()|DBIx::DataModel::Doc::Reference/bind()>
-method.
 
 Statements are rarely created by a direct call to the C<new()> method;
 instead, they are created indirectly, by calling methods C<table()> 
 or C<join()> on a schema; see
 L<DBIx::DataModel::Doc::Reference/"Creating statements">.
+
+
+=item REFINED
+
+The 
+L<refine()|DBIx::DataModel::Doc::Reference/refine()>
+method stores parameters within the statement object
+(C<-columns> to retrieve, C<-where> clauses
+that will end up in the generated SQL, etc.),
+and bumps the statement into C<REFINED> state.
+
+While in this state, C<refine()> can be called again several
+times, accumulating parameters in several steps.
+
+Early parameter binding may also occur through the
+L<bind()|DBIx::DataModel::Doc::Reference/bind()>
+method.
 
 
 =item SQLIZED
@@ -816,47 +819,6 @@ Ath this point, the statement is ready to extract data rows.
   +-------------+
 
 
-
-
-
-=head2 Difference between views and statements
-
-Both views and statements encapsulate SQL SELECT queries,
-so some clarification is of order.
-
-A view is a I<subclass> of C<DBIx::DataModel::View>,
-and therefore also a subclass of
-C<DBIx::DataModel::Source>.
-Data rows retrieved from that source become instances
-of the view. The view usually encapsulates a database
-join, and the table classes corresponding to the joined
-tables are also parent classes for the view (multiple
-inheritance). This means that instances of the view inherit all
-parent methods for manipulating columns, navigating through
-associations, etc. The view may include a WHERE clause
-to restrict the database query, but this is very unfrequent :
-the main purpose of a view is to encapsulate a join.
-
-By contrast, a statement is an I<instance> of
-C<DBIx::DataModel::Statement>, most frequently without any
-subclassing, that represents a particular request to a particular
-data source (a datasource is a subclass of C<DBIx::DataModel::Source>,
-i.e.  either a table or a view), and technically encapsulates
-a reference to a C<DBI> statement handle (sth).
-The statement object goes
-through a I<lifecycle> with following steps : assembling query clauses,
-generating the SQL, binding values, preparing the database statement,
-executing the database query, retrieving the results and blessing them
-into appropriate classes. Statements also have
-pagination methods to walk through the results in chunks
-of several data rows.
-
-With respect to the generated SQL, we could say in short that
-a view represents the FROM clause of the SQL, while
-a statement represents all other clauses
-(list of columns, WHERE, ORDER BY, GROUP BY, etc.).
-
-
 =head2 Stepwise building of the SQL query
 
 =head3 Principle
@@ -905,28 +867,90 @@ stepwise building of SQL conditions as just demonstrated above.
 
 Stepwise binding of values to placeholders requires
 I<named placeholders>, as opposed to usual positional placeholders.
-Named placeholders are usually expressed with a
-question mark followed by a name, like in
+Named placeholders are recognized according to a I<placeholder prefix>, 
+which is C<?:> by default. Here is an example :
 
-  $statement->refine(-where => {col1 => '?foo',
-                                col2 => '?bar',
-                                col3 => '?foo'});
+  $statement->refine(-where => {col1 => '?:foo',
+                                col2 => '?:bar',
+                                col3 => '?:foo'});
 
 Values are bound to these named parameters (either before
-or after the C<refine> step) through the L</bind> method :
+or after the C<refine()> step) through the L</bind()> method :
 
   $statement->bind(foo => 123, bar => 456);
 
-
-If the question mark prefix C<?> is inconvenient, another placeholder
-prefix may be specified as an option to the
+If the default placeholder prefix C<?:> is inconvenient, another
+placeholder prefix may be specified as an option to the
 L<schema creation method|DBIx::DataModel::Doc::Reference/Schema>.
 
 
+=head1 COLUMN HANDLERS AND TYPES
+
+=head2 Column handlers
+
+A I<column handler> is just a pair C<< $handler_name => $handler_body >>;
+such pairs are associated to column names in tables, 
+either at table definition time
+(see L<DBIx::DataModel::Doc::Reference/define_table()>),
+or later through the 
+L<define_column_handlers()|DBIx::DataModel::Doc::Reference/define_column_handlers()> 
+method.
+
+Given any C<$row> object, a call to 
+C<< $row->apply_column_handler($handler_name) >>
+will iterate over all columns present in that row, check
+if these columns have a handler of the corresponding name, and if so,
+execute the associated code. 
+This can be useful for all sorts of data manipulation :
+
+=over
+
+=item *
+
+converting dates between internal database format and user presentation format
+
+=item *
+
+converting empty strings into null values
+
+=item *
+
+inflating scalar values into objects
+
+=item *
+
+column data validation
+
+=back
+
+Handler names B<from_DB> and B<to_DB> have a special
+meaning : they are called automatically just after reading data from
+the database, or just before writing into the database.
+Handler name B<validate> is used by the method
+L<DBIx::DataModel::Doc::Reference/"has_invalid_columns()">.
 
 
-=head1 COLUMN HANDLERS
+=head2 Types as collections of handlers
 
+A I<Type> is just a collection of handlers, registered under a type
+name : it is a convenience for defining the same collection of handlers
+to various columns in various tables.
+Here is an example from the L<DBIx::DataModel/SYNOPSIS> :
+
+  My::Schema->metadm->define_type(
+    name     => 'Percent',
+    handlers => {
+      from_DB  => sub {$_[0] *= 100 if $_[0]},
+      to_DB    => sub {$_[0] /= 100 if $_[0]},
+      validate => sub {$_[0] =~ /1?\d?\d/}),
+    });
+
+Note that this notion of "type" is independent from the actual
+datatypes defined within the database (integer, varchar, etc.).
+From the Perl side, these are all seen as scalar values. So
+a column type as defined here is just a way to specify some
+operations, programmed in Perl, that can be performed on the
+scalar values.
 
 
 
@@ -947,7 +971,7 @@ This section can be safely skipped, unless you
 are interested in comparing various ORMs.
 
 
-=head2 Help lower-level layers, do not hide them
+=head2 Collaborate with lower-level layers, do not hide them
 
 C<DBIx::DataModel> provides abstractions that help client applications
 to automate some common tasks; however, access to lower-level
@@ -957,27 +981,38 @@ layers remains open, for cases where detailed operations are needed :
 
 =item *
 
-The generated classes contain methods that can return polymorphic
-results. By default, the return value is an object or a list
-of objects corresponding to data rows; however, these methods
-can also return a handle to the underlying DBI statement,
-or even just the generated SQL code. Hence, the client code
-can take control whenever any fine tuning is needed.
+Data retrieval methods can return B<polymorphic results>. By default, the
+return value is an object or a list of objects corresponding to data
+rows; however, these methods can also return a handle to the
+underlying DBI statement, or even just the generated SQL code. Hence,
+the client code can take control whenever any fine tuning is needed.
+
+=item *
+
+Client code can insert B<hooks> at various stages of the statement
+lifecycle : see parameters C<-post_SQL>, C<-pre_exec>, etc.
+to the 
+L<select()|DBIx::DataModel::Doc::Reference/"select()"> 
+method. This provides an opportunity for running any driver-specific
+or application-specific code, at a particular point in the 
+lifecycle. If the same hook is needed in every statement, 
+another possibility is to subclass
+L<DBIx::DataModel::Statement> and override the C<prepare()>,
+C<execute()> or C<select()> methods.
+
 
 =item *
 
 Data rows exploit the dual nature of Perl objects : on one hand they
 can be seen as objects, with methods to walk through the data and
 access related rows from other tables, but on the other hand they can
-also be seen as hashrefs, with usual Perl idioms for extracting keys,
+also be seen as B<hashrefs>, with usual Perl idioms for extracting keys,
 values or slices of data. This dual nature is important for passing
 data to external helper modules, such as XML generators, Perl dumps,
 javascript JSON, templates of the Template Toolkit, etc. Such modules
 need to walk on the data tree, exploring keys, values and subtrees; so
 they cannot work if data columns are implemented as object-oriented
-methods (because there is no simple way to ask for all available
-methods, and even if you get there, it is not possible to distinguish
-which of those methods encapsulate relevant data).
+methods.
 
 =back
 
@@ -1004,12 +1039,12 @@ Most RDBMS have facilities for checking or ensuring integrity rules :
 foreign key constraints, restricted ranges for values, cascaded
 deletes, etc. C<DBIx::DataModel> can also do some validation
 tasks, by setting up column types with a C<validate> handler;
-however, it is better advised to exploit data integrity
-checks within the RDBMS whenever possible.
+however, it is recommended  to rather use the RDBMS for 
+performing data integrity checks, whenever possible.
 
-=head3 Exploit database projections through variable-size objects
+=head3 Take advantage of database projections through variable-size objects
 
-Often in ORMs, columns in the table are in 1-to-1 correspondence
+In many ORMs, columns in the table are in 1-to-1 correspondence
 with attributes in the class; so any transfer between
 database and memory systematically includes all the columns, both
 for selects and for updates. Of course this has the advantage
@@ -1038,7 +1073,6 @@ depending on which columns are requested from the client. However,
 this might be another source of inefficiency, if the client
 frequently needs one column from the first group and one from the
 second group.
-
 
 With C<DBIx::DataModel>, the client code has precise control over
 which columns to transfer, because these can be specified separately at
@@ -1120,38 +1154,9 @@ The reverse is also true : the composite class is able
 to automatically call its own methods to gather data from associated
 classes and build a complete data tree in memory. This is declared through
 the
-L<AutoExpand|DBIx::DataModel::Doc::Reference/"AutoExpand">
+L<set_auto_expand()|DBIx::DataModel::Doc::Reference/"set_auto_expand()">
 method and is useful for passing structured data
 to external modules, like for example XML or JSON exports.
-
-
-=head3 ColumnTypes
-
-A C<DBIx::DataModel> schema can declare some I<column types> : these
-are collections of I<handlers> (callback functions) for
-performing tasks such as data validation or transformation.
-Handlers are then attached to specific columns belonging to that column
-type.
-
-The handler concept is generic and can be exploited by client programs
-according to the application domain. However, some handler names
-have a special meaning within the framework :
-for example, handlers named C<fromDB> or C<toDB> are automatically
-called when transfering  data from or to the database.
-Take for example the "Percent" column type shown in the  Synopsis :
-
-  # 'percent' conversion between database (0.8) and user (80)
-  $schema->ColumnType(Percent =>
-     fromDB   => sub {$_[0] *= 100 if $_[0]},
-     toDB     => sub {$_[0] /= 100 if $_[0]},
-     validate => sub {$_[0] =~ /1?\d?\d/});
-
-Note that this notion of "type" is independent from the actual
-datatypes defined within the database (integer, varchar, etc.).
-From the Perl side, these are all seen as scalar values. So
-a column type as defined here is just a way to specify some
-operations, programmed in Perl, that can be performed on the
-scalar values.
 
 
 
@@ -1186,8 +1191,10 @@ Every method involving a SELECT in the database (either when
 searching rows from a table or collection of tables, or when
 following associations from an existing row) accepts an number
 of optional parameters that closely correspond to SQL clauses.
-The programming interface reuses what is defined in the excellent
-L<SQL::Abstract|SQL::Abstract> module, with some extensions.
+The programming interface reuses main concepts from 
+L<SQL::Abstract|SQL::Abstract> module, but with some extensions
+implemented in 
+L<SQL::Abstract::More|SQL::Abstract::More>.
 Therefore it is possible for example to specify
 
 =over
@@ -1238,9 +1245,9 @@ location, using the L<bind_columns|DBI/bind_columns> method.
 C<DBIx::DataModel> can exploit this feature
 through a I<fast statement> :
 
-  my $statement = My::Table->select(-columns  => ...,
-                                    -where    => ...,
-                                    -resultAs => 'fast_statement');
+  my $statement = My::Table->select(-columns   => ...,
+                                    -where     => ...,
+                                    -result_as => 'fast_statement');
   while (my $row = $statement->next) {
     work_with($row);
   }
@@ -1292,10 +1299,6 @@ C<DBIx::DataModel> by stating
 
 
 
-
-
-
-
 =head1 DEPENDENCIES
 
 C<DBIx::DataModel> depends on
@@ -1304,15 +1307,17 @@ C<DBIx::DataModel> depends on
 
 =item L<DBI|DBI>
 
+=item L<SQL::Abstract|SQL::Abstract>
+
 =item L<SQL::Abstract::More|SQL::Abstract::More>
 
+=item L<Params::Validate|Params::Validate>
+
+=item L<namespace::autoclean|namespace::autoclean>
+
+=item L<Module::Load|Module::Load>
+
 =back
-
-
-
-
-
-
 
 
 
@@ -1323,16 +1328,50 @@ Here are answers to some design choices, in the form
 of a FAQ.
 
 
-=head2 Global state in class variables ? Isn't that bad design ?
+=head2 Why no accessor methods for columns ?
 
-The philosophy of C<DBIx::DataModel> is that a record is nothing more
+The philosophy of C<DBIx::DataModel> is that a data row
+is very lightweight: nothing more
 than a blessed hashref, where hash keys are column names and hash
-values are column values.  So all information about schemas,
-relationships, connections, etc is indeed within a C<classData>
-hashref associated with each class. This class data is a global
-resource, and like with other global resources in Perl (for example
-C<STDIN>, C<%ENV>, or special variables C<$/>, C<$,>, etc.), several
-clients can interact through the global state.
+values are column values.  So data access goes through the
+hashref API; therefore all common Perl idioms can be used, like
+
+  # inspect hash keys
+  my @column_names = keys @$row;      
+  
+  # remove leading spaces in all columns
+  s/^\s+// foreach values @$row;      
+  
+  # print a slice
+  print @{$row}{qw/col1 col2 col3/};  
+  
+  # swap values
+  ($row->{col1}, $row->{col2}) = ($row->{col2}, $row->{col1}); 
+  
+  # other way to swap values
+  @{$row}{qw/col1 col2/} = @{$row}{qw/col2 col1/};             
+
+
+
+=head2 Why this C<localize_state> method ?
+
+In versions of C<DBIx::DataModel> prior to 2.0, the schema
+was a I<class>, not an instance : therefore the schema
+state (including the C<$dbh> connection to the database)
+was a global resource, stored as package variables within
+the schema class.
+
+Version 2.0 introduced the possibility to work in I<multi-schema>
+mode, where each schema is an instance that holds its private data
+separate from other schemas (see
+L<DBIx::DataModel::Doc::Reference/"SCHEMA METHODS">).  However,
+multi-schema mode is a bit more verbose, a bit more costly in
+resources, and is only needed in some very special situations, like
+for example when transferring data between several databases;
+therefore the preferred mode is still the I<single-schema> mode,
+where a unique I<singleton> schema instance is shared throughout
+the whole application, much like other global resources in Perl (for example
+C<STDIN>, C<%ENV>, or special variables C<$/>, C<$,>, etc.).
 
 When used with care, interaction of several components through a
 global resource can be quite handy : for example C<STDIN> does not
@@ -1351,13 +1390,13 @@ redirect C<STDIN>, for the duration of one specific computation, and
 then automatically restore it to its previous state.
 
 C<DBIx::DataModel> uses a similar approach. The database handle
-is stored in the schema class, and can be changed dynamically,
-which will immediately affect all classes and objects related
-to that schema. However, state modifications in schemas
+is stored in the schema instance, and can be changed dynamically,
+which will immediately affect all classes and objects that use
+this schema. However, state modifications in schemas
 can be limited to a specific scope through the
-L<localizeState|DBIx::DataModel::Doc::Reference/localizeState> method.
+L<localize_state|DBIx::DataModel::Doc::Reference/localize_state> method.
 Furthermore, the
-L<doTransaction|DBIx::DataModel::Doc::Reference/doTransaction> method
+L<do_transaction|DBIx::DataModel::Doc::Reference/do_transaction> method
 takes an optional C<$dbh> argument to localize the transaction within
 a specific database handle.
 With these methods, sane management of the global state is quite easy,
@@ -1365,39 +1404,6 @@ and since nested transactions are supported, it is perfectly possible
 to program transactions with cross-database operations (copying objects
 from one database to another, or simultaneously performing the same
 insert or delete in several databases).
-
-Actually, localization is only needed for  C<Schema> subclasses,
-that indeed hold a mutable global state
-(database connection, current debug mode, current value of
-C<selectImplicitlyFor>, etc.).
-For C<Table> and C<View> subclasses, all information in C<classData>
-is set by "compile-time methods" (methods starting with an uppercase letter)
-and then stays immutable : joins, primary keys, etc.; so there is no
-potential conflict.
-
-
-=head2 Why no accessor methods for columns ?
-
-The philosophy of C<DBIx::DataModel> is that a record is nothing more
-than a blessed hashref, where hash keys are column names and hash
-values are column values.  So data access uses goes through the
-hashref API : this allows you to exploit all common Perl idioms, like
-
-  # inspect hash keys
-  my @column_names = keys @$row;      
-  
-  # remove leading spaces in all columns
-  s/^\s+// foreach values @$row;      
-  
-  # print a slice
-  print @{$row}{qw/col1 col2 col3/};  
-  
-  # swap values
-  ($row->{col1}, $row->{col2}) = ($row->{col2}, $row->{col1}); 
-  
-  # other way to swap values
-  @{$row}{qw/col1 col2/} = @{$row}{qw/col2 col1/};             
-
 
 
 =head2 Serialization
@@ -1419,53 +1425,44 @@ calling the C<thaw> method.
 =head1 TO DO
 
 
-Here are some points that hopefully will be improved in
-a future release C<DBIx::DataModel> :
+Here is a list of points to improve in future versions C<DBIx::DataModel> :
 
-  - 'hasInvalidColumns' : should be called automatically before insert/update ?
-  - 'validate' record handler (not only column handlers)
+  - 'has_invalid_columns' : should be called automatically before insert/update ?
+  - 'validate' record handler (at record level, not only column handlers)
   - 'normalize' handler : for ex. transform empty string into null
-  - walk through WHERE queries and apply 'toDB' handler (not obvious!)
+  - walk through WHERE queries and apply 'to_DB' handler (not obvious!)
   - more extensive and more organized testing
   - add PKEYS keyword in -columns, will be automatically replaced by
     names of primary key columns of the touched tables
-  - design API for easy dynamic association of objects without dealing
+  - design API for easy dynamic association of row objects without dealing
     with the keys
   - remove spouse example from doc (because can't have same table
     twice in roles)
   - quoting
-  - dbiPrepareMethod as argument to select()
-  - pre/post callbacks: support arrays of handlers, refine(..) adds to the
-    array
-  - refine(-orderBy => ..) should add to the ordering
-  - reflection methods (list of roles, etc.)
+  - pre/post callbacks: support arrays of handlers, refine(..) should add
+    to the array
+  - refine(-order_by => ..) should add to the ordering
   - update with subtrees (insert/update on dependent records. Quid: delete?)
   - auto-unjoin (API for partioning columns into subobjects).
-  - inheritance between tables: a) support for Postgres; b) support for DB views
   - support for DBI TraceLevel
-  - execute() : check for unbound "dbidm placeholders"
   - support DISTINCT ON ...
   - support find_or_create, update_or_create
   - doc : Schema has only tables, pk, fk (no cols, triggers, stored procs, domains)
   - doc : SQL-oriented (like Fey)
   - copy idea from DBIC:Storage:DBI:MultiColumnIn
-
   - Storable
      - hooks for YAML ?
      - think about STORABLE_attach
 
-  - doc : explain Table inheritance
-     $schema->Table(..., {parents => ...});
+
      # ADD TESTS for table inheritance
 
-
+  - readonly tables
   - declare RT bug for Params::Validate : doc is confused about
     validate_with / validation_options
 
 
   - savepoints
-
-  - allow tables without primary key
 
   - various policies for guessing foreign keys : e.g proc.id = attr.proc_id
 
@@ -1481,39 +1478,29 @@ a future release C<DBIx::DataModel> :
        my $prod = Schema->new(dbh => ..., db_schema_name => 'PROD');
     and that name is prepended to table names
 
-  - fix all doc refernces to ::View or ::Table (add Source::)
-
   - doc glossary, introduce the 'path' term
-
-  - think API for defining column types : just in new() or allow
-    to do it in later calls to a "setter" method ?
 
   - find a way to rename _singleInsert > _single_insert, without breaking
     compatibility
 
+  - various policies for guessing foreign keys : e.g proc.id = attr.proc_id
 
-  Other column handlers :
-    - validate
-    - normalize
+  - Statement::refine() should be more intelligent
+      - combine (-where, -orderBy, callbacks)
+      - reject overrides when not possible
+      - should add something like a 'reset' method ??
 
-- various policies for guessing foreign keys : e.g proc.id = attr.proc_id
+  - declare RT bug for Params::Validate : doc is confused about
+    validate_with / validation_options
 
-- Statement::refine() should be more intelligent
-    - combine (-where, -orderBy, callbacks)
-    - reject overrides when not possible
-    - should add something like a 'reset' method ??
+  - doc : explain Table inheritance
+     $schema->Table(..., {parent_tables => ...});
+     # ADD TESTS for table inheritance
+  - Storable
+     - hooks for YAML ?
+     - think about STORABLE_attach
 
-- declare RT bug for Params::Validate : doc is confused about
-  validate_with / validation_options
-
-- doc : explain Table inheritance
-   $schema->Table(..., {parent_tables => ...});
-   # ADD TESTS for table inheritance
-- Storable
-   - hooks for YAML ?
-   - think about STORABLE_attach
-
- - think about reuse of statements : either this should be forbidden,
+ - think about reuse of statements : either it should be forbidden,
    or we need a way to do it cleanly, e.g
 
       my $statement = $schema->table($name);
@@ -1523,4 +1510,3 @@ a future release C<DBIx::DataModel> :
 
 - think about freeze/thaw in multi-schema mode
 
-  - BEWARE : sql generation occurs later, problem if \@columns array has changed

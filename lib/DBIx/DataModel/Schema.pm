@@ -287,6 +287,18 @@ sub _recursive_unbless {
 }
 
 
+sub _debug { # internal method to send debug messages
+  my ($self, $msg) = @_;
+  my $debug = $self->debug;
+  if ($debug) {
+    if (ref $debug && $debug->can('debug')) { $debug->debug($msg) }
+    else                                    { carp $msg; }
+  }
+}
+
+
+
+
 
 #----------------------------------------------------------------------
 # PRIVATE CLASS FOR LOCALIZING STATE (see L</localizeState> method

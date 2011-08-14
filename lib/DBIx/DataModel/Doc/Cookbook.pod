@@ -56,8 +56,43 @@ See L<DBIx::DataModel::Schema::Generator|DBIx::DataModel::Schema::Generator>.
 
 =head2 Add custom methods into a generated table class
 
-[TODO : EXAMPLE]
+Defining methods in any Perl class does not require to have a I<file>
+corresponding to that class; it suffices to define the method within
+the appropriate I<package>. So the easiest way to add methods into
+tables is to first let C<DBIx::DataModel> create the schema and table
+classes, and then switch to those packages, all in the same file :
 
+
+  # define schema, tables, associations (current package doesn't matter)
+  DBIx::DataModel->Schema('Some::Schema')
+    ->Table(qw/Foo foo foo_id/)
+    ->Table(...)
+    ->Association(...)
+    ->...;
+
+  # add a method into table 'Foo'
+  package Some::Schema::Foo;
+  sub my_added_method {
+    my $self = shift;
+    ...
+  }
+
+  # go back to main package
+  package main;
+  ...
+   
+
+Another way to achieve the same result is to use C<DBIx::DataModel>'s 
+L<internal utility method|DBIx::DataModel::Meta::Utils/define_method>
+for injecting methods into classes :
+
+   use DBIx::DataModel::Meta::Utils;
+   DBIx::DataModel::Meta::Utils->define_method(
+      class          => 'Some::Schema::Foo',
+      name           => 'my_added_method,
+      body           => sub {my $self = shift; ...},
+    );
+  
 
 =head2 Object inflation/deflation
 
@@ -67,8 +102,8 @@ the database into a Perl object :
   # declare column type
   use Date::Simple;
   $schema->Type(Date_simple => 
-    fromDB => sub {Date::Simple->new($_[0]) if $_[0] },
-    toDB   => sub {$_[0] = $_[0]->as_str    if $_[0] },
+    from_DB => sub {Date::Simple->new($_[0]) if $_[0] },
+    to_DB   => sub {$_[0] = $_[0]->as_str    if $_[0] },
   );
   
   # apply column type to columns
@@ -80,7 +115,9 @@ automatically within C<-where> conditions. So the following
 would not work :
 
   use Date::Simple qw/today/;
-  my $rows = My::Table->select(-where => {d_end => {'<' => today()}});
+  my $rows = $schema->table($name)->select(
+    -where => {d_end => {'<' => today()}},
+  );
 
 because C<today()> returns a C<Date::Simple> object that will
 not be understood by L<SQL::Abstract|SQL::Abstract> when
@@ -89,7 +126,9 @@ enough to inspect the C<-where> conditions and decide
 which column types to apply, so you have to do it yourself :
 
   my $today = today()->as_str;
-  my $rows = My::Table->select(-where => {d_end => {'<' => $today}});
+  my $rows = $schema->table($name)->select(
+    -where => {d_end => {'<' => $today}},
+  );
 
 
 =head2 Schema versioning
@@ -115,7 +154,7 @@ column aliases (with a vertical bar C<|>) in order to retrieve the results.
   print "max is : $row->{max_col1}, average is $row->{foo}";
 
 Or you can dispense with column aliases, and retrieve the results
-directly into an arrayref, using C<< -resultAs => 'flat_arrayref' >> :
+directly into an arrayref, using C<< -result_as => 'flat_arrayref' >> :
 
   my $array_ref = $source->select(-columns   => [qw/MAX(col1)
                                                    AVG(col2)
@@ -124,19 +163,27 @@ directly into an arrayref, using C<< -resultAs => 'flat_arrayref' >> :
                                   -result_as => 'flat_arrayref');
   my ($max_col1, $avg_col2, $count_col3) = @$array_ref;
 
-B<Caveat>: currently, C<fromDB> handlers do not apply to aggregator functions
-(this might be improved in a future version).
+B<Caveat>: currently, C<from_DB> handlers do not apply to 
+aggregator functions. So if the aggregated result needs any transformation,
+you have to specify a column type for it :
+
+  my $row = $source->select(
+    -columns      => [qw/MAX(d_begin)|max_d_begin MIN(d_end)|min_d_end .../],
+    -where        => ...,
+    -column_types => {Date_simple => [qw/max_d_begin min_d_end/],
+    -result_as    => 'firstrow'
+  );
 
 
 =head2 Database functions or stored procedures
 
 Like above: normal SQL syntax and column aliases.
 
-  my $rows = $source->select(-columns => [qw/FOOBAR(col1,col2)|foobar
+  my $rows = $source->select(-columns => [qw/FUNC(col1,col2)|func
                                             (col3+99)|big_col3/],
                              -where    => ...,
                              );
-  print "$_->{foobar} and $_->{big_col3}" foreach @$rows;
+  print "$_->{func} and $_->{big_col3}" foreach @$rows;
 
 
 =head2 Nested queries
@@ -153,7 +200,7 @@ There is no need for a hashref inflator: rows returned
 by a C<select()> can be used directly as hashrefs.
 For example here is a loop that prints a hash slice from  each row :
 
-  my $rows       = My::Table->select(...);
+  my $rows       = $schema->table($name)->select(...);
   my @print_cols = qw/col3 col6 col7/;
   foreach my $row (@$rows) {
     print @{$row}{@print_cols};
@@ -254,9 +301,8 @@ Override the C<_singleInsert> method
 First insert an arrayref of subrecords within the 
 main record hashref; then call C<insert> on that main
 record. See example in 
-L<insert() reference|DBIx::DataModel::Doc::Reference/"insert">.
-The precondition for this to work is that the 
-relationship between the two classes should be a 
+L<insert()|DBIx::DataModel::Doc::Reference/"insert()">.
+This only works if the two classes are associated through a 
 L<Composition|DBIx::DataModel::Doc::Reference/"Composition()">.
 A datastructure containing the keys of all generated records
 can be retrieved by using the option 
@@ -273,7 +319,7 @@ can be retrieved by using the option
   # then delete the whole tree from the database
   $author->delete;
 
-This only works if the relationship between classes is a 
+This only works if the two classes are associated through a 
 L<Composition|DBIx::DataModel::Doc::Reference/"Composition()">.
 The C<expand> operations retrieve related records and add them
 into a tree in memory. Then C<delete> removes from the database
@@ -286,10 +332,40 @@ database, rather than at the ORM layer.
 
 =head2 Timestamp validation
 
-[TODO: WRITE EXAMPLE ]
-
-(make sure that the record was not touched between the time
+Goal : make sure that the record was not touched between the time
 it was presented to the user (display form) and the time
-the user wants to update or delete that record).
+the user wants to update or delete that record. 
 
+In order to do this, we will suppose that every record in every
+table has a timestamp field C<TS_MODIF>, updated automatically by
+a trigger within the database. Below is a callback function that 
+checks if the timestamp is still valid :
+
+  sub _check_time_stamp {
+    my ($record, $table, $where) = @_;
+    if ($where) { # this is an update, not an insert
+
+      my $displayed_timestamp = delete $record->{TS_MODIF};
+      my $db_record  = $record->schema->table($table)->select(
+        -columns   => 'TS_MODIF',
+        -where     => $where,
+        -for       => 'update', # optional, depends on your RDBMS
+        -result_as => 'firstrow',
+      )
+        or croak "fetch timestamp: could not find record "
+               . join(" / ", %$where);
+     my $db_timestamp = $db_record->{TS_MODIF};
+     $db_timestamp == $displayed_timestamp
+       or croak "record in $table was modified by somebody else; please "
+              . "refresh your screen and try again";
+     }
+  }
+
+This callback function can then be registered as an I<auto_update_column>
+when defining the schema :
+
+  DBIx::DataModel->define_schema(
+   class               => 'My::Schema,
+   auto_update_columns => {TS_MODIF => \&_check_time_stamp},
+  );
 

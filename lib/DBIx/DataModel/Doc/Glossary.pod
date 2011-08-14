@@ -178,7 +178,7 @@ A database operation which consists of taking rows from several sources
 and producing new data rows. The result contains columns merged from 
 those sources, according to the L</join condition>.
 See the 
-L<join method|DBIx::DataModel::Reference/join()>.
+L<join method|DBIx::DataModel::Reference/define_join()>.
 
 =item join condition
 
@@ -218,7 +218,7 @@ Object-Oriented.
 Object-Relational Management system : a 
 framework of classes and methods
 to encapsulate interactions with a L</RDBMS>.
-C<DBIx::DataModel> is one of several ORMs for Perl.
+There are many ORMs for Perl; C<DBIx::DataModel> is just one of them.
 
 =item path method
 
@@ -261,7 +261,8 @@ a L</table> or a L</view>.
 
 =item schema
 
-A subclass of L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>, that
+An instance of a subclass of 
+L<DBIx::DataModel::Schema|DBIx::DataModel::Schema>, that
 holds information about its tables, views and associations, and
 encapsulates a L</dbh>.
 

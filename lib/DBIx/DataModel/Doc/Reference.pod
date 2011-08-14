@@ -4,7 +4,8 @@ DBIx::DataModel::Doc::Reference - General reference for DBIx::DataModel
 
 =head1 DOCUMENTATION CONTEXT
 
-This chapter is part of the C<DBIx::DataModel> manual.
+This chapter is part of the C<DBIx::DataModel> manual. 
+
 
 =over
 
@@ -37,6 +38,15 @@ L<INTERNALS|DBIx::DataModel::Doc::Internals>
 L<GLOSSARY|DBIx::DataModel::Doc::Glossary>
 
 =back
+
+
+B<WARNING> : Since version 2.0, a number of important changes
+have been made in the API
+(classes renamed, arguments renamed or reorganized, etc. -- see
+L<DBIx::DataModel::Doc::Delta_2.0>). 
+If you need backwards compatibility, make sure to load the 
+L<1.0 compatibility layer|DBIx::DataModel::Compatibility::V1>.
+
 
 
 =head1 INTRODUCTION
@@ -404,28 +414,7 @@ see L</define_column_handlers()>.
 
 Then, when you call C<< $obj->apply_column_handler($handler_name) >>,
 each column having a handler of the corresponding name will execute the
-associated code. This can be useful for all sorts of data manipulation :
-
-=over
-
-=item *
-
-converting dates between internal database format and user presentation format
-
-=item *
-
-converting empty strings into null values
-
-=item *
-
-inflating scalar values into objects
-
-=item *
-
-column data validation
-
-=back
-
+associated code. 
 
 =item auto_insert_columns
 
@@ -930,7 +919,7 @@ status, etc.
 
 A schema subclass can have several instances; in that case, the application
 runs in I<multi-schema> mode. However, multi-schema mode is only useful
-in some special situations, like for example transferring data between
+in some special situations, like for example when transferring data between
 several databases; in most common cases, a I<single-schema> mode is 
 enough. 
 
@@ -1162,7 +1151,11 @@ can be retrieved through the L</select()> method.
 
 This C<Schema::join()> method should not be confused with
 the meta-schema navigation method L</Meta::Schema::join()>, described 
-at the end of this document.
+at the end of this document, which is just an accessor method.
+
+Besides, derivatives of the present method are defined 
+in L</Statement::join()> and L</Table::join()>.
+
 
 =head2 Transactions
 
@@ -1787,6 +1780,11 @@ of column names :
           ...)
 
 
+=item C<< -dbi_prepare_method => $method_name >>
+
+overrides the L</dbi_prepare_method()> specified at the schema level.
+
+
 =item C<< -result_as => $result_kind >>
 
 specifies what kind of result will be produced. 
@@ -2179,8 +2177,10 @@ of C<bind> for passing DBI-specific arguments.
 See L<DBI/"bind_param"> for explanations.
 
 
-=head2 Accessor methods
+=head2 Proxy methods
 
+Since the statement holds references to a schema and a meta-source,
+there are some accessors or proxy methods to these objects.
 
 =head3 schema()
 
@@ -2200,6 +2200,27 @@ This is for convenience, because in something like
 one naturally expects to get the meta-object associated with table
 C<$table_name>, forgetting the fact that the subexpression C<<
 $schema->table($table_name) >> is a statement and not a table!
+
+
+=head3 Statement::join()
+
+  my $join_stmt = $source_stmt->join(qw/path1 path2 .../)->prepare;
+
+Starting from a given statement, returns a reference to another
+statement that will select a collection of data rows from tables
+associated to the current meta-source, performing the appropriate
+joins.  Internally this is implemented throught the C</define_join()>
+method, with an additional C<-where> criteria to constrain on the
+primary key(s) of the meta-source.  That statement cannot be executed
+yet, because the values of the primary key are not known until we have
+an row of that source; but the statement can already be
+L<prepare|/prepare()>d.  Later on, we can
+L<execute|/execute()> the statement by binding
+it to an instance of _class> :
+
+   my $obj          = $source_stmt->fetch(...);
+   my $related_rows = $join_stmt->execute($obj)->all;
+
 
 =head2 Utility methods
 
@@ -2407,29 +2428,8 @@ calling C<Statement::delete()>.
 
 =head2 Table::join()
 
-=head3 as a class method
 
-  my $statement = $table_class->join(qw/path1 path2 .../)->prepare;
-
-Starting from a given table, returns a reference to a statement that
-will select a collection of data rows from associated tables,
-performing the appropriate joins.  Internally this is implemented
-throught the C</define_join()> method, with an additional C<-where>
-criteria to constrain on the primary key(s) of C<$table_class>.  That
-statement cannot be executed yet, because the values of the primary
-key are not known until we have an instance of C<$table_class>; but the
-statement can already be
-L<prepare|/prepare()>d.  Later on, we can
-L<execute|/execute()> the statement by binding
-it to an instance of C<$table_class> :
-
-   my $obj          = $table_class->fetch(...);
-   my $related_rows = $statement->execute($obj)->all;
-
-
-=head3 as an instance method
-
-Creates a statement as just explained above, and immediately
+Calls L</"Statement::join()"> to create a statement, and immediately
 binds it to the current object. 
 So for example if C<< $emp->{emp_id} == 987 >>, then
 
@@ -2440,7 +2440,14 @@ will generate
 
   SELECT * FROM Activity INNER JOIN Department 
                          ON Activity.dpt_id = Department.dpt_id
-           WHERE  emp_id = 987 AND d_end IS NULL
+           WHERE emp_id = 987 
+             AND d_end IS NULL
+
+Observe that the C<WHERE> clause contains a combination of
+criteria, coming on one hand from the initial C<$emp> object, 
+and on the other hand from the regular C<-where> clause within the 
+C<select()>.
+
 
 
 =head2 class methods delegated to the Statement class
@@ -2484,7 +2491,7 @@ similar to C<select()> above
 
   my @meta_tables  = $meta_schema->tables;
 
-Returns all of L<DBIx::DataModel::Meta::Source::Table> instances
+Returns all L<DBIx::DataModel::Meta::Source::Table> instances
 declared in this C<$meta_schema>.
 
 =head3 Meta::Schema::table()
@@ -2498,7 +2505,7 @@ with name C<$table_name>, or C<undef>.
 
   my @associations = $meta_schema->associations;
 
-Returns all of L<DBIx::DataModel::Meta::Association> instances
+Returns all L<DBIx::DataModel::Meta::Association> instances
 declared in this C<$meta_schema>.
 
 =head3 association()
@@ -2513,7 +2520,7 @@ with name C<$association_name>, or C<undef>.
 
   my @types        = $meta_schema->types;
 
-Returns all of L<DBIx::DataModel::Meta::Type> instances
+Returns all L<DBIx::DataModel::Meta::Type> instances
 declared in this C<$meta_schema>.
 
 =head3 type()
@@ -2527,7 +2534,7 @@ with name C<$type_name>, or C<undef>.
 
   my @joins        = $meta_schema->joins;
 
-Returns all of L<DBIx::DataModel::Meta::Source::Join> instances
+Returns all L<DBIx::DataModel::Meta::Source::Join> instances
 declared in this C<$meta_schema>.
 
 =head3 Meta::Schema::join()
