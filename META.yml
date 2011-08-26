@@ -16,39 +16,9 @@ name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 1.99_05
-  DBIx::DataModel::Compatibility::V0:
-    file: lib/DBIx/DataModel/Compatibility/V0.pm
-    version: 0
-  DBIx::DataModel::Compatibility::V1:
-    file: lib/DBIx/DataModel/Compatibility/V1.pm
-    version: 0
-  DBIx::DataModel::Meta:
-    file: lib/DBIx/DataModel/Meta.pm
-    version: 0
-  DBIx::DataModel::Meta::Association:
-    file: lib/DBIx/DataModel/Meta/Association.pm
-    version: 0
-  DBIx::DataModel::Meta::Path:
-    file: lib/DBIx/DataModel/Meta/Path.pm
-    version: 0
-  DBIx::DataModel::Meta::Schema:
-    file: lib/DBIx/DataModel/Meta/Schema.pm
-    version: 0
-  DBIx::DataModel::Meta::Source:
-    file: lib/DBIx/DataModel/Meta/Source.pm
-    version: 0
-  DBIx::DataModel::Meta::Source::Join:
-    file: lib/DBIx/DataModel/Meta/Source/Join.pm
-    version: 0
-  DBIx::DataModel::Meta::Source::Table:
-    file: lib/DBIx/DataModel/Meta/Source/Table.pm
-    version: 0
-  DBIx::DataModel::Meta::Type:
-    file: lib/DBIx/DataModel/Meta/Type.pm
-    version: 0
-  DBIx::DataModel::Meta::Utils:
-    file: lib/DBIx/DataModel/Meta/Utils.pm
+    version: 1.30
+  DBIx::DataModel::Base:
+    file: lib/DBIx/DataModel/Base.pm
     version: 0
   DBIx::DataModel::Schema:
     file: lib/DBIx/DataModel/Schema.pm
@@ -59,12 +29,6 @@ provides:
   DBIx::DataModel::Source:
     file: lib/DBIx/DataModel/Source.pm
     version: 0
-  DBIx::DataModel::Source::Join:
-    file: lib/DBIx/DataModel/Source/Join.pm
-    version: 0
-  DBIx::DataModel::Source::Table:
-    file: lib/DBIx/DataModel/Source/Table.pm
-    version: 0
   DBIx::DataModel::Statement:
     file: lib/DBIx/DataModel/Statement.pm
     version: 0
@@ -72,10 +36,10 @@ provides:
     file: lib/DBIx/DataModel/Statement/JDBC.pm
     version: 0
   DBIx::DataModel::Table:
-    file: lib/DBIx/DataModel/Compatibility/V1.pm
+    file: lib/DBIx/DataModel/Table.pm
     version: 0
   DBIx::DataModel::View:
-    file: lib/DBIx/DataModel/Compatibility/V1.pm
+    file: lib/DBIx/DataModel/View.pm
     version: 0
 recommends:
   DBD::Mock: 0
@@ -84,16 +48,12 @@ requires:
   Acme::Damn: 0
   Carp: 0
   DBI: 0
-  MRO::Compat: 0
   Module::Build: 0
-  Module::Load: 0
-  Params::Validate: 0
-  SQL::Abstract::More: 0
+  SQL::Abstract: 1.61
   Scalar::Util: 0
   Storable: 0
   Test::More: 0
-  namespace::autoclean: 0
-  perl: 5.008
+  perl: 5.006
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.99_05
+version: 1.30

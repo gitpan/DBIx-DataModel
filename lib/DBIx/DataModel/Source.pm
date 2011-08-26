@@ -7,80 +7,144 @@ package DBIx::DataModel::Source;
 use warnings;
 no warnings 'uninitialized';
 use strict;
-use mro 'c3';
 use Carp;
-use List::MoreUtils qw/firstval/;
-use namespace::autoclean;
+use base 'DBIx::DataModel::Base';
+use DBIx::DataModel::Statement;
+
+our @CARP_NOT = qw/DBIx::DataModel         DBIx::DataModel::Schema
+		   DBIx::DataModel::Table  DBIx::DataModel::View  
+                   DBIx::DataModel::Iterator/;
 
 
-{no strict 'refs'; *CARP_NOT = \@DBIx::DataModel::CARP_NOT;}
+#----------------------------------------------------------------------
+# COMPILE-TIME PUBLIC METHODS
+#----------------------------------------------------------------------
+
+
+sub MethodFromJoin {
+  my ($class, $meth_name, @roles) = @_;
+  @roles or croak "MethodFromJoin: not enough arguments";
+
+  # last arg may be a hashref of parameters to be passed to select()
+  my $pre_args;
+  $pre_args = pop @roles if ref $roles[-1];
+
+  my $meth = sub {
+    my ($self, @args) = @_;
+
+    # if called without args, and just one role, and that role 
+    # was previously expanded, then return the cached version
+    if (@roles == 1 && !@args) {
+      my $cached = $self->{$roles[0]};
+      return $cached if $cached;
+    }
+
+    unshift @args, %$pre_args if $pre_args;
+
+    my $statement = $self->join(@roles);
+    return ref $self ? $statement->select(@args)   # when instance method
+                     : $statement->refine(@args);  # when class method
+  };
+
+  $class->schema->_defineMethod($class, $meth_name, $meth);
+  return $class;
+}
+
+# backwards compatibility
+*MethodFromRoles = \&MethodFromJoin;
+
 
 #----------------------------------------------------------------------
 # RUNTIME PUBLIC METHODS
 #----------------------------------------------------------------------
 
 sub schema {
-  my $self  = shift;
-  return (ref $self && $self->{__schema})
-         || $self->metadm->schema->class->singleton;
+  my $self = shift;
+  return $self->classData->{schema}; 
 }
 
 
-sub primary_key {
+sub table {
   my $self = shift; 
+  carp "the table() method is deprecated; call db_table() instead";
+  return $self->db_table;
+}
 
-  # get primary key columns
-  my @primary_key = $self->metadm->primary_key;
-
-  # if called as instance method, get values in those columns
-  @primary_key = @{$self}{@primary_key} if ref $self;
-
-  # choose what to return depending on context
-  if (wantarray) {
-    return @primary_key;
-  }
-  else {
-    @primary_key == 1
-      or croak "cannot return a multi-column primary key in a scalar context";
-    return $primary_key[0];
-  }
+sub db_table {
+  my $self = shift; 
+  return $self->classData->{db_table};
 }
 
 
-# several class methods, only available if in single-schema mode;
-# such methods are delegated to the Statement class.
-my @methods_to_delegate = qw/select fetch fetch_cached bless_from_DB/;
-_delegate_to_statement_class($_) foreach @methods_to_delegate;
+sub selectImplicitlyFor {
+  my $self = shift;
 
-sub expand {
-  my ($self, $path, @options) = @_;
-  $self->{$path} = $self->$path(@options);
+  if (@_) {
+    not ref($self) 
+      or croak "selectImplicitlyFor(value) should be called as class method";
+    $self->classData->{selectImplicitlyFor} = shift;
+  }
+  return exists($self->classData->{selectImplicitlyFor}) ? 
+    $self->classData->{selectImplicitlyFor} :  
+    $self->schema->selectImplicitlyFor;
 }
 
-sub auto_expand {} # default; overridden in subclasses through set_auto_expand()
 
 
-sub apply_column_handler {
-  my ($self, $handler_name, $objects) = @_;
+sub blessFromDB {
+  my ($class, $record) = @_;
+  not ref($class) 
+    or croak "blessFromDB() should be called as class method";
+  bless $record, $class;
+  $record->applyColumnHandler('fromDB');
+  return $record;
+}
 
-  my $targets         = $objects || [$self];
-  my %column_handlers = $self->metadm->_consolidate_hash('column_handlers');
-  my $results         = {};
+
+
+
+sub select {
+  my ($class, @args) = @_;
+  not ref($class) 
+    or croak "select() should be called as class method";
+
+  my $statement = $class->schema->classData->{statementClass}->new($class);
+  return $statement->select(@args);
+}
+
+
+sub createStatement {
+  my $class = shift;
+
+  warn "->createStatement() is obsolete, use "
+     . "->select(.., -resultAs => 'statement')";
+
+  return $class->select(@_, -resultAs => 'statement');
+}
+
+
+
+
+sub applyColumnHandler {
+  my ($self, $handlerName, $objects) = @_;
+
+  my $targets        = $objects || [$self];
+  my $columnHandlers = $self->classData->{columnHandlers} || {};
+  my $results        = {};
 
   # iterate over all registered columnHandlers
- COLUMN:
-  while (my ($column_name, $handlers) = each %column_handlers) {
+  while (my ($columnName, $handlers) = each %$columnHandlers) {
 
-    # is $handler_name registered in this column ?
-    my $handler = $handlers->{$handler_name} or next COLUMN;
+    # is $handlerName registered in this column ?
+    my $handler = $handlers->{$handlerName} or next;
 
-    # apply that handler to all targets that possess the $column_name
+    # apply that handler to all targets that possess the $columnName
     foreach my $obj (@$targets) {
-      my $result = exists $obj->{$column_name}  
-         ? $handler->($obj->{$column_name}, $obj, $column_name, $handler_name)
-         : undef;
-      if ($objects) { push(@{$results->{$column_name}}, $result); }
-      else          { $results->{$column_name} = $result;         }
+      my $result = exists $obj->{$columnName} ? 
+            $handler->($obj->{$columnName}, $obj, $columnName, $handlerName) :
+            undef;
+      if ($objects) { push(@{$results->{$columnName}}, $result); }
+      else          { $results->{$columnName} = $result;         }
     }
   }
 
@@ -88,89 +152,93 @@ sub apply_column_handler {
 }
 
 
+sub expand {
+  my ($self, $role, @args) = @_;
+  $self->{$role} = $self->$role(@args);
+}
+
+sub autoExpand {} # default; overridden in subclasses through AutoExpand()
+
+
 sub join {
   my ($self, $first_role, @other_roles) = @_;
 
-=begin MOVED_TO_STATEMENT
+  my $class         = ref $self || $self;
+  my $isa_view      = $class->isa('DBIx::DataModel::View');
+  my $schema        = $class->schema;
+  my $joins         = $schema->classData->{joins};
+  my $table_classes = $isa_view ? $class->classData->{parentTables}
+                                : [$class];
 
   # find first join information
-  my $class = ref $self || $self;
-  my $path  = $self->metadm->path($first_role)
+  my ($join_data) = grep {$_} map {$joins->{$_}{$first_role}} @$table_classes
     or croak "could not find role $first_role in $class";
 
   # build search criteria on %$self from first join information
   my (%criteria, @left_cols);
-  my $prefix;
-  while (my ($left_col, $right_col) = each %{$path->{on}}) {
-    $prefix ||= $self->schema->placeholder_prefix;
-    $criteria{$right_col} = "$prefix$left_col";
+  while (my ($left_col, $right_col) = each %{$join_data->{where}}) {
+    $criteria{$right_col} = "?$left_col";
     push @left_cols, $left_col;
   }
 
-  # choose source (just a table or build a join) and then build a statement
-  my $schema      = $self->schema;
-  my $meta_schema = $schema->metadm;
-  my $source = @other_roles  ? $meta_schema->define_join($path->{to}{name},
-                                                         @other_roles)
-                             : $path->{to};
-  my $statement = $meta_schema->statement_class->new($source, $schema);
-  $statement->refine(-where => \%criteria);
-
-=end MOVED_TO_STATEMENT
-
-=cut
-
-
-  # call join() in ::Statement, to get another statement
-  my $metadm      = $self->metadm;
-  my $meta_schema = $metadm->schema;
-  my $schema      = $self->schema;
-  my $statement   = $meta_schema->statement_class->new($metadm, $schema);
-  $statement = $statement->join($first_role, @other_roles);
+  # choose source and build a statement
+  my $source 
+    = @other_roles  ? $schema->join($join_data->{table}, 
+                                    @other_roles)     # build a view
+                    : $join_data->{table};            # just take the table
+  my $statement = $source->select(-where    => \%criteria,
+                                  -resultAs => 'statement');
 
   # if called as an instance method
   if (ref $self) {
-    my $left_cols = $statement->{left_cols}
-      or die "statement had no {left_cols} entry";
 
     # check that all foreign keys are present
-    my $missing = join ", ", grep {not exists $self->{$_}} @$left_cols;
+    my $missing = join ", ", grep {not exists $self->{$_}} @left_cols;
     not $missing
       or croak "cannot follow role '$first_role': missing column '$missing'";
 
     # bind to foreign keys
-    $statement->bind(map {($_ => $self->{$_})} @$left_cols);
-  }
-
-  # else if called as class method
-  else {
-    if ($DBIx::DataModel::COMPATIBILITY > 1.99) {
-      carp 'join() was called as class method on a Table; instead, you should '
-         . 'call $schema->table($name)->join(...)';
-    }
+    $statement->bind(map {($_ => $self->{$_})} @left_cols);
   }
 
   return $statement;
 }
 
 
+# backwards compatibility
+*selectFromRoles = \&join;
 
 
-sub _delegate_to_statement_class { # also used by Source::Table.pm
-  my $method = shift;
-  no strict 'refs';
-  *{$method} = sub {
-    my ($class, @args) = @_;
-    not ref($class) 
-      or croak "$method() should be called as class method";
+sub primKey {
+  my $self = shift; 
 
-    my $metadm      = $class->metadm;
-    my $meta_schema = $metadm->schema;
-    my $schema      = $meta_schema->class->singleton;
-    my $statement   = $meta_schema->statement_class->new($metadm, $schema);
+  # get primKey columns
+  my @primKey = @{$self->classData->{primKey}};
 
-    return $statement->$method(@args);
-  };
+  # if called as instance method, get primKey values
+  @primKey = @{$self}{@primKey} if ref $self;
+
+  # choose what to return depending on context
+  return @primKey if wantarray;
+  not(@primKey > 1) 
+    or croak "cannot return a multi-column primary key in a scalar context";
+  return $primKey[0];
+}
+
+
+#----------------------------------------------------------------------
+# RUNTIME PRIVATE METHODS OR FUNCTIONS
+#----------------------------------------------------------------------
+
+
+
+sub _debug { # internal method to send debug messages
+  my ($self, $msg) = @_;
+  my $debug = $self->schema->classData->{debug};
+  if ($debug) {
+    if (ref $debug && $debug->can('debug')) { $debug->debug($msg) }
+    else                                    { carp $msg; }
+  }
 }
 
 
@@ -180,14 +248,12 @@ __END__
 
 =head1 NAME
 
-DBIx::DataModel::Source - Abstract parent for Table and Join
+DBIx::DataModel::Source - Abstract parent for Table and View 
 
 =head1 DESCRIPTION
 
-Abstract parent class for
-L<DBIx::DataModel::Source::Table|DBIx::DataModel::Source::Table> and
-L<DBIx::DataModel::Source::Join|DBIx::DataModel::Source::Join>. For
-internal use only.
+Abstract parent class for L<DBIx::DataModel::Table|DBIx::DataModel::Table> and
+L<DBIx::DataModel::View|DBIx::DataModel::View>. For internal use only.
 
 
 =head1 METHODS
@@ -219,6 +285,19 @@ This module implements
 =item L<join|DBIx::DataModel::Doc::Reference/join>
 
 =item L<primKey|DBIx::DataModel::Doc::Reference/primKey>
+
+=back
+
+=head1 PRIVATE METHOD NAMES
+
+The following methods or functions are used
+internally by this module and 
+should be considered as reserved names, not to be
+redefined in subclasses :
+
+=over
+
+=item _debug
 
 =back
 

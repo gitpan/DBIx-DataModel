@@ -13,8 +13,6 @@ use List::Util   qw/max/;
 use Exporter     qw/import/;
 use DBI;
 
-{no strict 'refs'; *CARP_NOT = \@DBIx::DataModel::CARP_NOT;}
-
 our @EXPORT = qw/fromDBIxClass fromDBI/;
 
 
