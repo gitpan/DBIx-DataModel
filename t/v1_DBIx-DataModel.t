@@ -1,43 +1,47 @@
 use strict;
 use warnings;
 no warnings 'uninitialized';
+
 use DBI;
 use Data::Dumper;
 use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 use Storable qw/dclone/;
 
 use constant N_DBI_MOCK_TESTS => 103;
-use constant N_BASIC_TESTS    => 15;
+use constant N_BASIC_TESTS    =>  15;
 
 use Test::More tests => (N_BASIC_TESTS + N_DBI_MOCK_TESTS);
 
 
 # die_ok : succeeds if the supplied coderef dies with an exception
-sub die_ok(&) { my $code=shift; eval {$code->()}; ok($@, $@);}
+sub die_ok(&) { 
+  my $code=shift; 
+  eval {$code->()}; 
+  my $err = $@;
+  $err =~ s/ at .*//;
+  ok($err, $err);
+}
 
 
 
-BEGIN {
-use_ok("DBIx::DataModel");}
+use_ok("DBIx::DataModel", -compatibility=> 1.0);
 
-  BEGIN { DBIx::DataModel->Schema('HR'); } # Human Resources
+DBIx::DataModel->Schema('HR'); # Human Resources
+
 
 ok(HR->isa("DBIx::DataModel::Schema"), 'Schema defined');
-
 my ($lst, $emp, $emp2, $act);
-
-
 
 # will not override an existing package
 die_ok {DBIx::DataModel->Schema('DBI');};
 
-  BEGIN {
-    HR->Table(Employee   => T_Employee   => qw/emp_id/)
-      ->Table(Department => T_Department => qw/dpt_id/)
-      ->Table(Activity   => T_Activity   => qw/act_id/);
-  }
 
-ok(HR::Employee->isa("DBIx::DataModel::Table"), 'Table defined');
+  HR->Table(Employee   => T_Employee   => qw/emp_id/)
+    ->Table(Department => T_Department => qw/dpt_id/)
+    ->Table(Activity   => T_Activity   => qw/act_id/);
+
+
+ok(HR::Employee->isa("DBIx::DataModel::Source::Table"), 'Table defined');
 ok(HR::Employee->can("select"), 'select method defined');
 
   package HR::Department;
@@ -89,9 +93,8 @@ ok(HR::MyView->can("employee"), 'View inherits roles');
   HR->NoUpdateColumns(qw/d_modif user_id/);
   HR::Employee->NoUpdateColumns(qw/last_login/);
 
-is_deeply([HR::Employee->noUpdateColumns], 
-	  [qw/d_modif user_id last_login/], 'noUpdateColumns');
-
+is_deeply([sort HR::Employee->noUpdateColumns], 
+	  [qw/d_modif last_login user_id/], 'noUpdateColumns');
 
   HR::Employee->ColumnHandlers(lastname => normalizeName => sub {
 			    $_[0] =~ s/\w+/\u\L$&/g
@@ -124,7 +127,8 @@ SKIP: {
   # Checks if those match with the DBD::Mock history.
 
   sub sqlLike { # closure on $dbh
-    my $msg = pop @_;    
+                # TODO : fix line number, should report the caller's line
+    my $msg = pop @_;
 
     for (my $hist_index = -(@_ / 2); $hist_index < 0; $hist_index++) {
       my ($sql, $bind)  = (shift, shift);
@@ -406,14 +410,17 @@ die_ok {$emp->emp_id};
                                  [qw/2 2/],
                                  [qw/1 1bis/],
                                 ];
-  $hashref = HR->join(qw/Employee activities/)->select(
-    -resultAs => 'hashref'
-   );
-  is_deeply($hashref, {1 => {1      => {emp_id => 1, act_id => 1},
-                             '1bis' => {emp_id => 1, act_id => '1bis'}},
-                       2 => {2      => {emp_id => 2, act_id => 2}}},
-              'resultAs => [hashref => @cols]');
 
+  SKIP: {
+    skip "THINK: semantics of ->primary_key for a join", 1;
+    $hashref = HR->join(qw/Employee activities/)->select(
+      -resultAs => 'hashref'
+     );
+    is_deeply($hashref, {1 => {1      => {emp_id => 1, act_id => 1},
+                               '1bis' => {emp_id => 1, act_id => '1bis'}},
+                         2 => {2      => {emp_id => 2, act_id => 2}}},
+                'resultAs => "hashref"');
+  };
 
 
   # subquery
@@ -491,10 +498,11 @@ die_ok {$emp->emp_id};
 
   sqlLike('SELECT lastname, dpt_name ' .
 	  'FROM T_Employee LEFT OUTER JOIN T_Activity ' .
-	  'ON T_Employee.emp_id=T_Activity.emp_id ' .		
+	  'ON T_Employee.emp_id=T_Activity.emp_id ' .
 	  'LEFT OUTER JOIN T_Department ' .
 	  'ON T_Activity.dpt_id=T_Department.dpt_id ' .
-	  'WHERE (gender = ?)', ['F'], 'join');
+	  'WHERE (gender = ?)',
+             ['F'], 'join');
 
 
   my $view2 = HR->join(qw/Employee <=> activities => department/);
@@ -502,7 +510,7 @@ die_ok {$emp->emp_id};
 
   sqlLike('SELECT lastname, dpt_name ' .
 	  'FROM T_Employee INNER JOIN T_Activity ' .
-	  'ON T_Employee.emp_id=T_Activity.emp_id ' .		
+	  'ON T_Employee.emp_id=T_Activity.emp_id ' .
 	  'LEFT OUTER JOIN T_Department ' .
 	  'ON T_Activity.dpt_id=T_Department.dpt_id ' .
 	  'WHERE (gender = ?)', ['F'], 'join with explicit roles');
@@ -523,6 +531,8 @@ die_ok {$emp->emp_id};
 
   die_ok {$emp->join(qw/activities foo/)};
   die_ok {$emp->join(qw/foo bar/)};
+
+
 
   # join from an instance
   $dbh->{mock_clear_history} = 1;
@@ -615,11 +625,13 @@ die_ok {$emp->emp_id};
           'column types on table and column aliases (sql)');
   is($lst->[0]{db}, "01.01.2001", "fromDB handler on table and column alias");
 
+
   # column types on column aliases, without table alias
   $dbh->{mock_clear_history} = 1;
   $dbh->{mock_add_resultset} = [ [qw/ln  db/],
                                  [qw/foo 2001-01-01/], 
                                  [qw/bar 2002-02-02/] ];
+
   $lst = HR->join(qw/Department|dpt dpt.activities|act act.employee/)
            ->select(-columns => [qw/T_Employee.lastname|ln 
                                     T_Employee.d_birth|db/],
@@ -636,6 +648,7 @@ die_ok {$emp->emp_id};
   is($lst->[0]{db}, "01.01.2001", 
      "fromDB handler on column alias, without table alias");
 
+
   # stepwise statement prepare/execute
   $statement = HR::Employee->join(qw/activities department/);
   $statement->refine(-where => {gender => 'F'});
@@ -649,7 +662,10 @@ die_ok {$emp->emp_id};
 	  'WHERE (emp_id = ? AND gender = ? AND gender != ?)', [999, 'F', 'M'],
 	  'statement prepare/execute');
 
+
+
   # many-to-many association
+
   HR->Association([qw/Employee   employees   * activities employee/],
 			[qw/Department departments * activities department/]);
 
@@ -675,9 +691,9 @@ die_ok {$emp->emp_id};
 
 
   HR::Employee->update(999, {firstname => 'toto', 
-			 d_modif => '02.09.2005',
-			 d_birth => '01.01.1950',
-			 last_login => '01.09.2005'});
+                             d_modif => '02.09.2005',
+                             d_birth => '01.01.1950',
+                             last_login => '01.09.2005'});
 
   sqlLike('UPDATE T_Employee SET d_birth = ?, firstname = ? '.
 	  'WHERE (emp_id = ?)', ['1950-01-01', 'toto', 999], 'update');
@@ -856,7 +872,6 @@ TODO:
 hasInvalidFields
 expand
 autoExpand
-MethodFromRoles
 document the tests !!
-
+select(-dbi_prepare_method => ..)
 

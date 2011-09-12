@@ -19,8 +19,7 @@ use DBI;
 use Test::More tests => 6;
 
 
-BEGIN {use_ok("DBIx::DataModel");}
-
+use_ok("DBIx::DataModel", -compatibility=> 1.0);
 
 DBIx::DataModel->Schema('HR', tableParent => 'Foo::Parent::Table',
                               viewParent  => [qw/Foo::Parent::V1
@@ -40,9 +39,12 @@ ok(HR::Employee->isa('DBIx::DataModel::Table'), "isa table base");
 
 my $view = HR->join(qw/Employee activities department/);
 
-ok($view->isa('Foo::Parent::V1'),       "isa view custom 1");
-ok($view->isa('Foo::Parent::V2'),       "isa view custom 2");
-ok($view->isa('DBIx::DataModel::View'), "isa view base");
+SKIP: {
+  skip "joins now belong to ::Join, not ::View", 3;
 
+  ok($view->isa('Foo::Parent::V1'),       "isa view custom 1");
+  ok($view->isa('Foo::Parent::V2'),       "isa view custom 2");
+  ok($view->isa('DBIx::DataModel::View'), "isa view base");
 
+}
 
