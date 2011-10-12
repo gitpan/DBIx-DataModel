@@ -49,7 +49,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "2.01"
+         "version" : "2.02"
       },
       "DBIx::DataModel::Compatibility::V0" : {
          "file" : "lib/DBIx/DataModel/Compatibility/V0.pm",
@@ -142,5 +142,5 @@
          "http://dev.perl.org/licenses/"
       ]
    },
-   "version" : "2.01"
+   "version" : "2.02"
 }
