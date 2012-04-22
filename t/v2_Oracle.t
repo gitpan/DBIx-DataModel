@@ -4,22 +4,25 @@ use warnings;
 use SQL::Abstract::Test import => [qw/is_same_sql_bind/];
 
 use DBIx::DataModel -compatibility=> undef;
-use DBIx::DataModel::Statement::Oracle;
 
 use constant NTESTS  => 10;
 use Test::More tests => NTESTS;
 
-DBIx::DataModel->Schema('ORA',
-                        statement_class => 'DBIx::DataModel::Statement::Oracle')
-->Table(All_tables => ALL_TABLES => qw/TABLE_NAME OWNER/);
 
 SKIP: {
   eval "use DBD::Oracle; 1"
     or skip "DBD::Oracle is not installed", NTESTS;
-  $ENV{DBI_DSN}
-    or skip "ENV{DBI_DSN} is not defined", NTESTS;
+
+  # declare datamodel
+  eval "use DBIx::DataModel::Statement::Oracle; 1";
+  DBIx::DataModel->Schema(
+    'ORA',
+    statement_class => 'DBIx::DataModel::Statement::Oracle'
+   )->Table(All_tables => ALL_TABLES => qw/TABLE_NAME OWNER/);
 
   # connect to DB
+  $ENV{DBI_DSN}
+    or skip "ENV{DBI_DSN} is not defined", NTESTS;
   my $dbh = DBI->connect(undef, undef, undef, 
                          {RaiseError => 1, AutoCommit => 1});
   ORA->dbh($dbh);
