@@ -16,7 +16,7 @@ name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 2.26
+    version: 2.27
   DBIx::DataModel::Compatibility::V0:
     file: lib/DBIx/DataModel/Compatibility/V0.pm
     version: 0
@@ -94,12 +94,13 @@ requires:
   Module::Build: 0
   Module::Load: 0
   Params::Validate: 0
-  SQL::Abstract::More: 1.03
+  SQL::Abstract::More: 1.04
   Scalar::Util: 0
   Storable: 0
   Test::More: 0
-  namespace::autoclean: 0
+  Try::Tiny: 0
+  namespace::clean: 0
   perl: 5.008
 resources:
   license: http://dev.perl.org/licenses/
-version: 2.26
+version: 2.27
