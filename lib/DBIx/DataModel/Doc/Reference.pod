@@ -522,6 +522,19 @@ method returns a single object, otherwise it returns an arrayref)
 
 =back
 
+When the multiplicity is '*', a method named C<insert_into_...> is
+installed in the class of the other association end. This method
+create new objects of the associated class, taking care of the linking
+automatically. For example :
+
+  $an_employee->insert_into_activities({d_begin => $today,
+                                        dpt_id  => $dpt});
+
+This is equivalent to
+
+  $schema->table('Activity')->insert({d_begin => $today,
+                                      dpt_id  => $dpt,
+                                      emp_id  => $an_employee->{emp_id}});
 
 =item join_cols
 
@@ -598,6 +611,10 @@ directional paths between those sources.
 Only binary associations can be declared; however, it is possible
 to define methods joining three or more tables : see
 L</define_navigation_method()>.
+
+
+
+
 
 
 =head4 Special semantics for compositions
@@ -1202,6 +1219,13 @@ the top-level transaction is finished.
 
 There is no support (yet!) for nested transactions with
 intermediate savepoints.
+
+If the dbh is an instance of L<DBIx::RetryOverDisconnects>, 
+C<do_transaction()> behaves like L<DBIx::RetryOverDisconnects/txn_do>, 
+i.e. it will inspect if the failure was due to a disconnection, and 
+in that case will try again, as many times as required in 
+the C<TxnRetries> attribute.
+
 
 =head2 Schema utility methods
 
@@ -2400,7 +2424,7 @@ returns that column (so you can call C<< my $k = $obj->primary_key >>).
 
   $row->expand($path, %options);
 
-Executes the method C<< $role >> to follow an Association,
+Executes the method C<< $path >> to follow an Association,
 stores the result in the object itself under C<< $row->{$path} >>,
 and returns that result.
 This is typically used to expand an object into a tree datastructure.
@@ -2431,7 +2455,7 @@ with arguments, like C<< $row->some_path(-columns => '*') >>.
 Asks the object to expand itself with some objects in foreign tables.
 Does nothing by default. Should be redefined in subclasses,
 most probably through the 
-L</set_auto_expand> method.
+L</define_auto_expand> method.
 If the optional argument C<$with_recursion> is true, then 
 C<auto_expand> is recursively called on the expanded objects.
 

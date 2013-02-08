@@ -8,7 +8,7 @@ use warnings;
 use strict;
 use MRO::Compat  (); # don't want to call MRO::Compat::import()
 
-our $VERSION = '2.30';
+our $VERSION = '2.31';
 
 # compatibility setting : see import()
 our $COMPATIBILITY = $VERSION; # from 2.20, no longer automatic compatibility
@@ -288,7 +288,7 @@ just add a new method into the table class :
 
 Declare how to automatically expand objects into data trees
 
-  My::Schema::Activity->metadm->set_auto_expand(qw/employee department/);
+  My::Schema::Activity->metadm->define_auto_expand(qw/employee department/);
 
 =head3 Automatic schema generation
 
@@ -447,6 +447,35 @@ into an array (they must be used immediately) :
     do_something_immediately_with($row);
   }
 
+=head3 Insert
+
+  my $table = $schema->table($table_name);
+
+  #  If you provide the primary key (called 'my_code' in this example):
+  $table->insert({my_code => $pk_val, field1 => $val1, field2 => $val2, ...});
+
+  #  If your database provides the primary key:
+  my $id = $table->insert({field1 => $val1, field2 => $val2, ...});
+  #  This assumes your DBD driver implements last_insert_id.
+  #  If not, you can provide one as an option to the schema.
+
+  #  Insert multiple records using a list of arrayrefs.
+  #  First arrayref defines column names
+  $table->insert(
+                  [qw/  field1  field2  /],
+                  [qw/  val11   val12   /],
+                  [qw/  val22   val22   /],
+                );
+
+  #  Or just insert a list of hashes
+  $table->insert(
+      {field1 => val11, field2 => val12},
+      {field2 => val21, field2 => val22},
+  );
+
+  # insertion through the association Employee - Activity
+  $an_employee->insert_into_activities({d_begin => $today,
+                                        dpt_id  => $dpt});
 
 =head3 Update
 
@@ -458,7 +487,7 @@ into an array (they must be used immediately) :
   $table->update(@primary_key, {field1 => $val1, field2 => $val2, ...});
 
   # bulk update
-  $table->update(-set   => {field1 => $val1, field2 => $val2, ...}
+  $table->update(-set   => {field1 => $val1, field2 => $val2, ...},
                  -where => \%condition);
 
   # invoking instances instead of table classes
@@ -758,7 +787,8 @@ Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 =head1 ACKNOWLEDGEMENTS
 
 Thanks to Cedric Bouvier for some bug fixes and improvements, and to
-Terrence Brannon for many fixes in the documentation.
+Terrence Brannon and Ross Attril for fixes and additions in the
+documentation.
 
 =head1 COPYRIGHT AND LICENSE
 

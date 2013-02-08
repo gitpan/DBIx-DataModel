@@ -5,9 +5,9 @@ author:
 build_requires:
   Task::Weaken: 0
 configure_requires:
-  Module::Build: 0.38
+  Module::Build: 0.40
 dynamic_config: 1
-generated_by: 'Module::Build version 0.38, CPAN::Meta::Converter version 2.112150'
+generated_by: 'Module::Build version 0.4003, CPAN::Meta::Converter version 2.120921'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -16,7 +16,7 @@ name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 2.30
+    version: 2.31
   DBIx::DataModel::Compatibility::V0:
     file: lib/DBIx/DataModel/Compatibility/V0.pm
     version: 0
@@ -85,7 +85,7 @@ provides:
     version: 0
 recommends:
   DBD::Mock: 0
-  Lingua::EN::Inflect::Number: 0
+  Lingua::EN::Inflect::Phrase: 0
 requires:
   Acme::Damn: 0
   Carp: 0
@@ -103,4 +103,5 @@ requires:
   perl: 5.008
 resources:
   license: http://dev.perl.org/licenses/
-version: 2.30
+  repository: https://github.com/damil/DBIx-DataModel
+version: 2.31
