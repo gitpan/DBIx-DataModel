@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::DataModel.
 
+
+v2.32 19.02.2013
+  - do the right thing when SQL::Abstract(array_datatypes => 1)
+  - new feature: $schema->autolimit_firstrow(1);
+
 v2.31 08.02.2013
   - Support for DBIx::RetryOverDisconnects in transactions
   - Schema::Generator uses Lingua::EN::Inflect::Phrase; test implemented
