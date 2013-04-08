@@ -37,7 +37,7 @@
             "Module::Build" : "0",
             "Module::Load" : "0",
             "Params::Validate" : "0",
-            "SQL::Abstract::More" : "1.04",
+            "SQL::Abstract::More" : "1.12",
             "Scalar::Util" : "0",
             "Storable" : "0",
             "Test::More" : "0",
@@ -50,7 +50,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "2.33"
+         "version" : "2.34"
       },
       "DBIx::DataModel::Compatibility::V0" : {
          "file" : "lib/DBIx/DataModel/Compatibility/V0.pm",
@@ -150,5 +150,5 @@
          "url" : "https://github.com/damil/DBIx-DataModel"
       }
    },
-   "version" : "2.33"
+   "version" : "2.34"
 }

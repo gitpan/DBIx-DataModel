@@ -124,11 +124,9 @@ sub bind {
       croak "unexpected arg type to bind()";
     }
   }
-  elsif (@args == 3) { # name => value, \%args (see L<DBI/bind_param>)
-    my $indices = $self->{param_indices}{$args[0]};
-    my $bind_param_args = pop @args;
-    defined $indices or croak "no such named placeholder : $args[0]";
-    $self->{bind_param_args}[$_] = $bind_param_args foreach @$indices;
+  elsif (@args == 3) { # name => value, \%datatype (see L<DBI/bind_param>)
+    # transform into ->bind($name => [$value, \%datatype])
+    @args = ($args[0], [$args[1], $args[2]]);
   }
   elsif (@args % 2 == 1) {
     croak "odd number of args to bind()";
@@ -222,7 +220,7 @@ sub refine {
          | result_as      | post_SQL  | pre_exec  | post_exec  | post_bless
          | limit          | offset    | page_size | page_index
          | column_types   | prepare_attrs         | dbi_prepare_method
-         | _left_cols
+         | _left_cols     | where_on
          )$/x
          and do {$args->{$k} = $v; last SWITCH};
 
@@ -276,6 +274,28 @@ sub sqlize {
     elsif (!exists $args->{-for}) {
       $sqla_args{-for} = $self->schema->select_implicitly_for;
     }
+  }
+
+  # EXPERIMENTAL: "where_on"
+  if (my $where_on = $args->{-where_on}) {
+    # retrieve components of the join
+    my ($join_op, $first_table, @other_join_args) = @{$sqla_args{-from}};
+    $join_op eq '-join'
+      or croak "datasource for '-where_on' was not a join";
+    my %by_dest_table = reverse @other_join_args;
+
+    # insert additional conditions into appropriate places
+    while (my ($table, $additional_cond) = each %$where_on) {
+      my $join_cond = $by_dest_table{$table}
+        or croak "-where_on => {'$table' => ..}: this table is not in the join";
+      $join_cond->{condition}
+        = $sql_abstract->merge_conditions($join_cond->{condition},
+                                          $additional_cond);
+    }
+
+    # TODO: should be able to use paths and aliases as keys, instead of 
+    # database table names.
+    # TOCHECK: is this stuff still compatible with the bind() method ?
   }
 
   # generate SQL
@@ -378,19 +398,9 @@ sub execute {
             . CORE::join(", ", @unbound);
 
   # bind parameters and execute
-  if ($self->{bind_param_args}) { # need to bind one by one because of DBI args
-    my $n_bound_params = @{$self->{bound_params}};
-    for my $i (0 .. $n_bound_params-1) {
-      my @bind = ($i, $self->{bound_params}[$i]);
-      my $bind_args = $self->{bind_param_args}[$i];
-      push @bind, $bind_args   if $bind_args;
-      $sth->bind_param(@bind);
-    }
-    $sth->execute;
-  }
-  else {                          # otherwise just call DBI::execute(...)
-    $sth->execute(@{$self->{bound_params}});
-  }
+  my $sqla = $self->schema->sql_abstract;
+  $sqla->bind_params($sth, @{$self->{bound_params}});
+  $sth->execute;
 
   # post_exec callback
   $args->{-post_exec}->($sth)  if $args->{-post_exec};

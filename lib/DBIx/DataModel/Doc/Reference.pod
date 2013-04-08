@@ -633,7 +633,7 @@ The UML intended meaning of a composition is that objects of the
 component classes cannot exist outside of their composite class. Within
 C<DBIx::DataModel>, the additional semantics for compositions is to
 support cascaded insertions and deletions, and auto-expansion; so the
-special semantis attached to kind C<Composition> is :
+special semantics attached to kind C<Composition> is :
 
 =over
 
@@ -1531,9 +1531,14 @@ and these columns are automatically removed from the record.
 An exception to this rule is when the L<SQL::Abstract|SQL::Abstract>
 instance associated with the schema has the option
 C<< array_datatypes => 1 >> : in that case, columns with arrayrefs
-are passed as-is to the SQL::Abstract and DBI layers, under the 
+are passed as-is to the SQL::Abstract::More and DBI layers, under the 
 assumption that the DBD driver will take appropriate action on
 those datatypes.
+
+Another exception is when the value is of shape
+C<< [$orig_value, \%datataype] >>, which is interpreted as a 
+value together with an SQL datatype; again this is 
+passed to the SQL::Abstract::More layer.
 
 =head3 update()
 
@@ -1605,9 +1610,7 @@ and C<('c3', 'c4', 'c5')> of updated columns are disjoint.
 
 Like for inserts, columns with arrayrefs or hashrefs
 are automatically removed from the update list (with a warning),
-unless the L<SQL::Abstract|SQL::Abstract>
-instance associated with the schema has the option
-C<< array_datatypes => 1 >>.
+except some special cases as described above for C<insert()>.
 
 =head3 delete()
 
@@ -1698,11 +1701,12 @@ JDBC methods C<getMemberCount()>, C<absolute()>, C<relative()>, etc.
   $result = $statement->select(
      -columns       => \@columns, 
        # OR : -columns => [-DISTINCT => @columns],
-     -where         => \%where,
+     -where         => \%where_criteria,
        # OR : -fetch => $key,
        # OR : -fetch => \@key,
+     -where_on      => \%where_on_criteria,
      -group_by      => \@groupings,
-     -having        => \%criteria,
+     -having        => \%having_criteria,
      -order_by      => \@order,
      -for           => $purpose,
      -post_SQL      => sub {...},
@@ -1777,14 +1781,13 @@ particular, the list must not always include primary or foreign keys
 updates will obviously fail.
 
 
-=item C<< -where => \%where >> 
+=item C<< -where => \%where_criteria >> 
 
-C<< \%where >> is a reference to a hash or array of 
+C<< \%where_criteria >> is a reference to a hash or array of 
 criteria that will be translated into SQL clauses. In most cases, this
 will just be something like C<< {col1 => 'val1', col2 => 'val2'} >>;
 see L<SQL::Abstract::select|SQL::Abstract/select> for 
- detailed description of the
-structure of that hash or array. It can also be
+a detailed description of the structure of that hash or array. It can also be
 a plain SQL string like C<< "col1 IN (3, 5, 7, 11) OR col2 IS NOT NULL" >>.
 
 
@@ -1831,6 +1834,33 @@ belongs to the given employee.
 
 In presence of C<-fetch>, arguments C<-where> and C<-select_as> are not
 allowed.
+
+=item C<< -where_on => \%where_on_criteria >> 
+
+  $schema->join(qw/Employee => activities => department/)->select(
+    -where => {firstname => 'Hector',
+               dpt_name  => 'Music'},
+    -where_on => {
+       T_Activity   => {d_end => {"<" => '01.01.2001'}},
+       T_Department => {dpt_head => 999},
+     },
+  );
+
+Adds some additional criteria into the 
+C<< JOIN ... ON ... >> SQL statement.
+B<This feature is still experimental>.
+These criteria are expressed as a hashref; keys of that hashref
+are names of database tables participating in the join.
+The criteria will be combined with regular foreign key constraints
+produced by the join; so in the (silly) example above, the generated
+SQL is :
+
+     SELECT * FROM T_Employee 
+       LEFT OUTER JOIN T_Activity
+         ON T_Employee.emp_id = T_Activity.emp_id AND d_end < ?
+       LEFT OUTER JOIN T_Department 
+         ON T_Activity.dpt_id = T_Department.dpt_id AND dpt_head = ?
+       WHERE dpt_name = ? AND firstname = ?
 
 
 =item C<< -group_by => "string" >>  or C<< -group_by => \@array >> 
@@ -2500,8 +2530,8 @@ C<auto_expand> is recursively called on the expanded objects.
 Inspects the target object or list of objects; for every
 column that exists in the object, checks whether
 a handler named C<< $handler_name >> was declared for
-that column (see method L</set_column_handlers>), and if so, 
-calls the handler. By this definition, if a column
+that column (see methods L</define_type> and L</define_column_type>), 
+and if so, calls the handler. By this definition, if a column
 is I<absent> in an object, then the handler for that column
 is not called, even though it was declared in the class.
 
@@ -2543,7 +2573,7 @@ level. As a result, your validation handlers can check if an existent
 column is empty, but cannot check if a column is missing (because in
 that case the handler would not be called).
 
-Your 'validate' handlers, defined through L</set_column_handlers>,
+Your 'validate' handlers, defined through L</define_type>,
 should return 0 or an empty string whenever the column value is invalid.
 Never return C<undef>, because we would no longer be able to
 distinguish between an invalid existent column and a missing column.

@@ -20,6 +20,8 @@ use Module::Load qw/load/;
 our @EXPORT = qw/fromDBIxClass fromDBI/;
 
 
+use constant CASCADE => 0; # see L<DBI/foreign_key_info>
+
 sub new {
   my ($class, @args) = @_;
   my $self =  bless {@args}, $class;
@@ -75,20 +77,24 @@ sub fromDBI {
       $fk_row->{"UK_$_"} ||= $fk_row->{"PK$_"} for qw/TABLE_NAME COLUMN_NAME/;
       $fk_row->{"FK_$_"} ||= $fk_row->{"FK$_"} for qw/TABLE_NAME COLUMN_NAME/;
 
+      my $del_rule = $fk_row->{DELETE_RULE};
+
       my @assoc = (
-        { table    => _table2class($fk_row->{UK_TABLE_NAME}),
-          col      => $fk_row->{UK_COLUMN_NAME},
-          role     => _table2role($fk_row->{UK_TABLE_NAME}),
-          mult_min => 1, #0/1 (TODO: depend on is_nullable on other side)
-          mult_max => 1,
+        { table      => _table2class($fk_row->{UK_TABLE_NAME}),
+          col        => $fk_row->{UK_COLUMN_NAME},
+          role       => _table2role($fk_row->{UK_TABLE_NAME}),
+          mult_min   => 1, #0/1 (TODO: depend on is_nullable on other side)
+          mult_max   => 1,
         },
-        { table    => _table2class($fk_row->{FK_TABLE_NAME}),
-          col      => $fk_row->{FK_COLUMN_NAME},
-          role     => _table2role($fk_row->{FK_TABLE_NAME}, "s"),
-          mult_min => 0,
-          mult_max => '*',
+        { table      => _table2class($fk_row->{FK_TABLE_NAME}),
+          col        => $fk_row->{FK_COLUMN_NAME},
+          role       => _table2role($fk_row->{FK_TABLE_NAME}, "s"),
+          mult_min   => 0,
+          mult_max   => '*',
+          is_cascade => defined $del_rule && $del_rule == CASCADE,
         }
        );
+
       push @{$self->{assoc}}, \@assoc;
     }
   }
@@ -259,7 +265,10 @@ __END_OF_CODE__
       $a->[$i]{mult} = {"0..*" => "*", "1..1" => "1"}->{$mult} || $mult;
     }
 
-    print "\n->Association(\n";
+    # association or composition
+    my $relationship = $a->[1]{is_cascade} ? 'Composition' : 'Association';
+
+    print "\n->$relationship(\n";
     printf $format, @{$a->[0]}{qw/table role mult col/};
     print ",\n";
     printf $format, @{$a->[1]}{qw/table role mult col/};
@@ -436,16 +445,19 @@ installed, you can use C<DBIx::DataModel::Schema::Generator>
 as a producer, translating from any available
 C<SQL::Translator> parser.
 
-The generated code is a skeleton that most probably will need
-some manual additions or modifications to get a fully functional 
-datamodel, because part of the information cannot be inferred 
-automatically. In particular, you should inspect the names 
-and multiplicities of the generated associations, and decide
-which of these associations should rather be 
-L<compositions|DBIx::DataModel::Doc::Reference/Composition>;
-and you should declare the 
-L<column types|DBIx::DataModel::Doc::Reference/ColumnType>
-for columns that need automatic inflation/deflation.
+Associations are derived from foreign key constraints declared in
+the database. If clause C<ON DELETE CASCADE> is present, this is
+interpreted as a composition; otherwise as an association.
+
+The generated code is a skeleton that most probably will need some
+manual additions or modifications to get a fully functional datamodel,
+because part of the information cannot be inferred automatically. In
+particular, you should inspect the names and multiplicities of the
+generated associations, and decide which of these associations should
+rather be L<compositions|DBIx::DataModel::Doc::Reference/Composition>;
+and you should declare the L<column
+types|DBIx::DataModel::Doc::Reference/ColumnType> for columns that
+need automatic inflation/deflation.
 
 
 =head1 METHODS
