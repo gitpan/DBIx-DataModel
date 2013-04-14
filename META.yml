@@ -1,5 +1,5 @@
 ---
-abstract: UML-based Object-Relational Mapping (ORM) framework
+abstract: 'UML-based Object-Relational Mapping (ORM) framework'
 author:
   - 'Laurent Dami <laurent.dami AT etat.ge.ch>'
 build_requires:
@@ -7,7 +7,7 @@ build_requires:
 configure_requires:
   Module::Build: 0.40
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4003, CPAN::Meta::Converter version 2.120921'
+generated_by: 'Module::Build version 0.4004, CPAN::Meta::Converter version 2.120921'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -16,7 +16,7 @@ name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 2.34
+    version: 2.35
   DBIx::DataModel::Compatibility::V0:
     file: lib/DBIx/DataModel/Compatibility/V0.pm
     version: 0
@@ -94,7 +94,7 @@ requires:
   Module::Build: 0
   Module::Load: 0
   Params::Validate: 0
-  SQL::Abstract::More: 1.12
+  SQL::Abstract::More: 1.14
   Scalar::Util: 0
   Storable: 0
   Test::More: 0
@@ -104,4 +104,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: https://github.com/damil/DBIx-DataModel
-version: 2.34
+version: 2.35
