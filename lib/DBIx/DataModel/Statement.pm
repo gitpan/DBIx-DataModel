@@ -12,6 +12,7 @@ use Scalar::Util     qw/weaken refaddr reftype dualvar/;
 use Params::Validate qw/validate ARRAYREF HASHREF/;
 use POSIX            qw/LONG_MAX/;
 use Acme::Damn       qw/damn/;
+use Clone            qw/clone/;
 use Try::Tiny;
 
 use DBIx::DataModel;
@@ -259,7 +260,7 @@ sub sqlize {
                         -union -union_all -intersect -except -minus
                         -order_by -group_by -having
                         -limit -offset -page_size -page_index/;
-  my %sqla_args = (-from         => $meta_source->db_from,
+  my %sqla_args = (-from         => clone($meta_source->db_from),
                    -want_details => 1);
   $args->{$_} and $sqla_args{$_} = $args->{$_} for @args_to_copy;
   $sqla_args{-columns} ||= $meta_source->default_columns;
@@ -464,7 +465,11 @@ sub select {
     /^(rows|arrayref)$/i  and return $self->all;
 
     # CASE firstrow : just the first row
-    /^firstrow$/i   and return $self->next;
+    /^firstrow$/i   and do {
+      my $row = $self->next;
+      $self->{sth}->finish;
+      return $row;
+    };
 
     # CASE hashref : all data rows, put into a hashref
     /^hashref$/i   and do {

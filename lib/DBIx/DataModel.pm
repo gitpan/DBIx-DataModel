@@ -8,7 +8,7 @@ use warnings;
 use strict;
 use MRO::Compat  (); # don't want to call MRO::Compat::import()
 
-our $VERSION = '2.38';
+our $VERSION = '2.39';
 
 # compatibility setting : see import()
 our $COMPATIBILITY = $VERSION; # from 2.20, no longer automatic compatibility
@@ -27,6 +27,7 @@ our @CARP_NOT = qw[
   DBIx::DataModel::Meta::Source::Join
   DBIx::DataModel::Meta::Source::Table
   DBIx::DataModel::Meta::Type
+  DBIx::DataModel::Meta::Utils
   DBIx::DataModel::Schema
   DBIx::DataModel::Schema::Generator
   DBIx::DataModel::Source
@@ -34,6 +35,7 @@ our @CARP_NOT = qw[
   DBIx::DataModel::Source::Join
   DBIx::DataModel::Statement
   DBIx::DataModel::Statement::JDBC
+  DBIx::DataModel::Statement::Oracle
   SQL::Abstract
   SQL::Abstract::More
 ];
@@ -794,13 +796,17 @@ Laurent Dami, E<lt>laurent.dami AT etat  ge  chE<gt>
 
 =head1 ACKNOWLEDGEMENTS
 
-The following people have contributed with ideas, bug fixes and/or
-improvements :
+Thanks to
 
   Ross Attril
   Cedric Bouvier
   Terrence Brannon
+  Alex Solovey
   Sergiy Zuban
+
+who contributed with ideas, bug fixes and/or
+improvements.
+
 
 =head1 COPYRIGHT AND LICENSE
 

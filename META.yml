@@ -16,7 +16,7 @@ name: DBIx-DataModel
 provides:
   DBIx::DataModel:
     file: lib/DBIx/DataModel.pm
-    version: 2.38
+    version: 2.39
   DBIx::DataModel::Compatibility::V0:
     file: lib/DBIx/DataModel/Compatibility/V0.pm
     version: 0
@@ -104,4 +104,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: https://github.com/damil/DBIx-DataModel
-version: 2.38
+version: 2.39
