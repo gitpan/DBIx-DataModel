@@ -13,7 +13,7 @@ my $builder = Module::Build->new(
         'Test::More'           => 0,
 	'Carp'                 => 0,
 	'DBI'                  => 0,
-	'SQL::Abstract::More'  => 1.15,
+	'SQL::Abstract::More'  => 1.21,
 	'Module::Build'        => 0,
         'Acme::Damn'           => 0,
         'Scalar::Util'         => 0,
@@ -24,6 +24,7 @@ my $builder = Module::Build->new(
         'MRO::Compat'          => 0,
         'Module::Load'         => 0,
         'Params::Validate'     => 0,
+        'Scalar::Does'         => 0,
 	'Try::Tiny'            => 0,
     },
     build_requires => {

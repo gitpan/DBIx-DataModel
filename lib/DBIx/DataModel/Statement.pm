@@ -262,7 +262,7 @@ sub sqlize {
                         -limit -offset -page_size -page_index/;
   my %sqla_args = (-from         => clone($meta_source->db_from),
                    -want_details => 1);
-  $args->{$_} and $sqla_args{$_} = $args->{$_} for @args_to_copy;
+  defined $args->{$_} and $sqla_args{$_} = $args->{$_} for @args_to_copy;
   $sqla_args{-columns} ||= $meta_source->default_columns;
   $sqla_args{-limit}   ||= 1
     if $result_as eq 'firstrow' && $self->schema->autolimit_firstrow;
@@ -465,11 +465,7 @@ sub select {
     /^(rows|arrayref)$/i  and return $self->all;
 
     # CASE firstrow : just the first row
-    /^firstrow$/i   and do {
-      my $row = $self->next;
-      $self->{sth}->finish;
-      return $row;
-    };
+    /^firstrow$/i   and return $self->_next_and_finish;
 
     # CASE hashref : all data rows, put into a hashref
     /^hashref$/i   and do {
@@ -488,6 +484,7 @@ sub select {
         $node = $node->{$_} ||= {} foreach @key;
         $node->{$last_key_item} = $row;
       }
+      $self->{sth}->finish;
       return \%hash;
     };
 
@@ -506,6 +503,7 @@ sub select {
       while (my $row = $self->next) {
         push @vals, @{$row}{@$cols};
       }
+      $self->{sth}->finish;
       return \@vals;
     };
 
@@ -558,6 +556,7 @@ sub row_count {
     my $sth    = $dbh->$method($sql);
     $sth->execute(@bind);
     ($self->{row_count}) = $sth->fetchrow_array;
+    $sth->finish;
   }
 
   return $self->{row_count};
@@ -599,6 +598,8 @@ sub next {
     $self->{row_num} += @rows;
     return \@rows;
   }
+
+  # NOTE: ->next() returns a $row, while ->next(1) returns an arrayref of 1 row
 }
 
 
@@ -606,7 +607,7 @@ sub all {
   my ($self) = @_;
 
   # just call next() with a huge number
-  return $self->next(POSIX::LONG_MAX);
+  return $self->_next_and_finish(POSIX::LONG_MAX);
 }
 
 
@@ -624,37 +625,6 @@ sub page_count {
   return int(($row_count - 1) / $page_size) + 1;
 }
 
-sub goto_page {
-  my ($self, $page_index) = @_;
-
-  # if negative index, count down from last page
-  $page_index += $self->page_count + 1    if $page_index < 0;
-
-  $page_index >= 1 or croak "illegal page_index: $page_index";
-
-  $self->{page_index} = $page_index;
-  $self->{offset}     = ($page_index - 1) * $self->page_size;
-  $self->execute     unless $self->{row_num} == $self->{offset};
-
-  return $self;
-}
-
-
-sub shift_pages {
-  my ($self, $delta) = @_;
-
-  my $page_index = $self->page_index + $delta;
-  $page_index >= 1 or croak "illegal page index: $page_index";
-
-  $self->goto_page($page_index);
-}
-
-sub next_page {
-  my ($self) = @_;
-
-  $self->shift_pages(1);
-}
-
 
 sub page_boundaries {
   my ($self) = @_;
@@ -667,7 +637,7 @@ sub page_boundaries {
 
 sub page_rows {
   my ($self) = @_;
-  return $self->next($self->page_size);
+  return $self->_next_and_finish($self->page_size);
 }
 
 
@@ -709,6 +679,12 @@ sub _build_reuse_row {
 }
 
 
+sub _next_and_finish {
+  my $self = shift;
+  my $row_or_rows = $self->next( @_ ); # pass original parameters
+  $self->{sth}->finish;
+  return $row_or_rows;
+}
 
 sub _compute_from_DB_handlers {
   my ($self) = @_;
