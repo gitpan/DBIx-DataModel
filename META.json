@@ -51,7 +51,7 @@
    "provides" : {
       "DBIx::DataModel" : {
          "file" : "lib/DBIx/DataModel.pm",
-         "version" : "2.43"
+         "version" : "2.44"
       },
       "DBIx::DataModel::Compatibility::V0" : {
          "file" : "lib/DBIx/DataModel/Compatibility/V0.pm"
@@ -129,5 +129,5 @@
          "url" : "https://github.com/damil/DBIx-DataModel"
       }
    },
-   "version" : "2.43"
+   "version" : "2.44"
 }
